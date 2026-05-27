@@ -1,0 +1,4339 @@
+src/tasks/task_servo.cpp
+
+===== src/tasks/task_servo.cpp =====
+// =====================================================
+// task_servo.cpp
+// SMART SAFE VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include <ESP32Servo.h>
+
+#include "config/pins.h"
+
+#include "core/globals.h"
+#include "core/system_bits.h"
+#include "core/events.h"
+#include "core/safe_state.h"
+
+// =====================================================
+// SERVO
+// =====================================================
+Servo lockServo;
+
+
+// =====================================================
+// ANGLE
+// =====================================================
+#define LOCK_ANGLE     0
+#define UNLOCK_ANGLE   90
+
+
+// =====================================================
+// STATE
+// =====================================================
+bool unlocked = false;
+
+
+// =====================================================
+// TASK SERVO
+// =====================================================
+void taskServo(void *pv)
+{
+    // =============================================
+    // CONFIG SERVO
+    // =============================================
+    lockServo.setPeriodHertz(50);
+
+    lockServo.attach(
+        SERVO_PIN,
+        500,
+        2400
+    );
+
+    // =============================================
+    // DEFAULT LOCK
+    // =============================================
+    lockServo.write(
+        LOCK_ANGLE
+    );
+
+    Serial.println(
+        "SERVO TASK STARTED"
+    );
+
+    // =============================================
+    // EVENT OBJECT
+    // =============================================
+    SystemEvent event;
+
+    // =============================================
+    // MAIN LOOP
+    // =============================================
+    while (1)
+    {
+        EventBits_t bits =
+            xEventGroupGetBits(
+                systemEvents
+            );
+
+        // =========================================
+        // UNLOCK REQUEST
+        // =========================================
+        if (
+            (bits & BIT_AUTH_OK) &&
+            !unlocked
+        )
+        {
+            Serial.println();
+
+            Serial.println(
+                "SERVO UNLOCK"
+            );
+
+            // =====================================
+            // OPEN SERVO
+            // =====================================
+            lockServo.write(
+                UNLOCK_ANGLE
+            );
+
+            unlocked = true;
+
+            // =====================================
+            // SAFE STATE
+            // =====================================
+            safeState =
+                SAFE_OPEN;
+
+            // =====================================
+            // SEND EVENT
+            // =====================================
+            event.type =
+                EVENT_UNLOCK;
+
+            strcpy(
+                event.message,
+                "SAFE_OPENED"
+            );
+
+            xQueueSend(
+                systemQueue,
+                &event,
+                0
+            );
+
+            Serial.println(
+                "SAFE OPEN"
+            );
+        }
+
+        // =========================================
+        // LOCK REQUEST
+        // =========================================
+        else if (
+            !(bits & BIT_AUTH_OK) &&
+            unlocked
+        )
+        {
+            Serial.println();
+
+            Serial.println(
+                "SERVO LOCK"
+            );
+
+            // =====================================
+            // CLOSE SERVO
+            // =====================================
+            lockServo.write(
+                LOCK_ANGLE
+            );
+
+            unlocked = false;
+
+            // =====================================
+            // SAFE STATE
+            // =====================================
+            safeState =
+                SAFE_LOCKED;
+
+            // =====================================
+            // SEND EVENT
+            // =====================================
+            event.type =
+                EVENT_LOCK;
+
+            strcpy(
+                event.message,
+                "SAFE_LOCKED"
+            );
+
+            xQueueSend(
+                systemQueue,
+                &event,
+                0
+            );
+
+            Serial.println(
+                "SAFE LOCKED"
+            );
+        }
+
+        // =========================================
+        // ALARM STATE
+        // =========================================
+        if (
+            bits & BIT_ALARM_ACTIVE
+        )
+        {
+            safeState =
+                SAFE_ALARM;
+        }
+
+        // =========================================
+        // TASK DELAY
+        // =========================================
+        vTaskDelay(
+            100 / portTICK_PERIOD_MS
+        );
+    }
+}src/tasks/task_gps.cpp
+
+===== src/tasks/task_gps.cpp =====
+// =====================================================
+// task_gps.cpp
+// FINAL CLEAN VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include <TinyGPS++.h>
+
+#include "core/globals.h"
+#include "config/pins.h"
+
+
+// =====================================================
+// GPS
+// =====================================================
+TinyGPSPlus gps;
+
+HardwareSerial gpsSerial(2);
+
+
+// =====================================================
+// EXTERN
+// =====================================================
+extern double gpsLat;
+
+extern double gpsLng;
+
+extern bool gpsValid;
+
+
+// =====================================================
+// GPS STATUS
+// =====================================================
+bool gpsConnected = false;
+
+unsigned long lastGPSFix = 0;
+
+unsigned long lastDebugTime = 0;
+
+
+// =====================================================
+// TASK GPS
+// =====================================================
+void taskGPS(void *pv)
+{
+    // =============================================
+    // GPS UART
+    //
+    // GPS TX -> ESP32 RX
+    // GPS RX -> ESP32 TX
+    // =============================================
+    gpsSerial.begin(
+        9600,
+        SERIAL_8N1,
+        GPS_RX,
+        GPS_TX
+    );
+
+    Serial.println();
+
+    Serial.println(
+        "================================="
+    );
+
+    Serial.println(
+        "GPS TASK STARTED"
+    );
+
+    Serial.println(
+        "WAIT GPS SIGNAL..."
+    );
+
+    Serial.println(
+        "================================="
+    );
+
+    while (1)
+    {
+        // =========================================
+        // READ GPS DATA
+        // =========================================
+        while (
+            gpsSerial.available()
+        )
+        {
+            char c =
+                gpsSerial.read();
+
+            gps.encode(c);
+
+            gpsConnected = true;
+        }
+
+        // =========================================
+        // GPS VALID
+        // =========================================
+        if (
+            gps.location.isValid()
+        )
+        {
+            gpsValid = true;
+        }
+
+        // =========================================
+        // GPS UPDATED
+        // =========================================
+        if (
+            gps.location.isUpdated()
+        )
+        {
+            gpsLat =
+                gps.location.lat();
+
+            gpsLng =
+                gps.location.lng();
+
+            lastGPSFix =
+                millis();
+
+            Serial.println();
+
+            Serial.println(
+                "========== GPS =========="
+            );
+
+            // =====================================
+            // LAT
+            // =====================================
+            Serial.print(
+                "LAT: "
+            );
+
+            Serial.println(
+                gpsLat,
+                6
+            );
+
+            // =====================================
+            // LNG
+            // =====================================
+            Serial.print(
+                "LNG: "
+            );
+
+            Serial.println(
+                gpsLng,
+                6
+            );
+
+            // =====================================
+            // SATELLITES
+            // =====================================
+            Serial.print(
+                "SAT: "
+            );
+
+            Serial.println(
+                gps.satellites.value()
+            );
+
+            // =====================================
+            // HDOP
+            // =====================================
+            Serial.print(
+                "HDOP: "
+            );
+
+            Serial.println(
+                gps.hdop.hdop()
+            );
+
+            // =====================================
+            // SPEED
+            // =====================================
+            Serial.print(
+                "SPEED KMH: "
+            );
+
+            Serial.println(
+                gps.speed.kmph()
+            );
+
+            // =====================================
+            // ALTITUDE
+            // =====================================
+            Serial.print(
+                "ALTITUDE: "
+            );
+
+            Serial.println(
+                gps.altitude.meters()
+            );
+
+            // =====================================
+            // GOOGLE MAP
+            // =====================================
+            Serial.println();
+
+            Serial.println(
+                "GOOGLE MAP:"
+            );
+
+            Serial.print(
+                "https://maps.google.com/?q="
+            );
+
+            Serial.print(
+                gpsLat,
+                6
+            );
+
+            Serial.print(",");
+
+            Serial.println(
+                gpsLng,
+                6
+            );
+
+            Serial.println(
+                "========================="
+            );
+        }
+
+        // =========================================
+        // DEBUG EVERY 5S
+        // =========================================
+        if (
+            millis() - lastDebugTime
+            > 5000
+        )
+        {
+            lastDebugTime =
+                millis();
+
+            // =====================================
+            // NO GPS UART
+            // =====================================
+            if (!gpsConnected)
+            {
+                Serial.println(
+                    "[GPS] NO UART DATA"
+                );
+            }
+
+            // =====================================
+            // WAIT SATELLITE
+            // =====================================
+            else if (
+                !gps.location.isValid()
+            )
+            {
+                Serial.println(
+                    "[GPS] WAIT SATELLITE..."
+                );
+
+                Serial.print(
+                    "SAT: "
+                );
+
+                Serial.println(
+                    gps.satellites.value()
+                );
+
+                Serial.print(
+                    "HDOP: "
+                );
+
+                Serial.println(
+                    gps.hdop.hdop()
+                );
+            }
+        }
+
+        // =========================================
+        // GPS LOST
+        // =========================================
+        if (
+            gpsValid &&
+            millis() - lastGPSFix
+            > 10000
+        )
+        {
+            Serial.println(
+                "[GPS] SIGNAL LOST"
+            );
+
+            gpsValid = false;
+        }
+
+        // =========================================
+        // TASK DELAY
+        // =========================================
+        vTaskDelay(
+            100 /
+            portTICK_PERIOD_MS
+        );
+    }
+}src/tasks/task_alarm.cpp
+
+===== src/tasks/task_alarm.cpp =====
+#include <Arduino.h>
+
+#include "config/pins.h"
+#include "core/globals.h"
+#include "core/system_bits.h"
+
+#define BUZZER_CHANNEL 7
+
+bool alarmState = false;
+
+void taskAlarm(void *pv) {
+
+    // =========================
+    // INIT BUZZER
+    // =========================
+    ledcSetup(
+        BUZZER_CHANNEL,
+        2000,
+        8
+    );
+
+    ledcAttachPin(
+        BUZZER_PIN,
+        BUZZER_CHANNEL
+    );
+
+    Serial.println(
+        "ALARM TASK STARTED"
+    );
+
+    while (1) {
+
+        EventBits_t bits;
+
+        bits = xEventGroupGetBits(
+            systemEvents
+        );
+
+        // =========================
+        // ALARM ACTIVE
+        // =========================
+        if (bits & BIT_ALARM_ACTIVE) {
+
+            if (!alarmState) {
+
+                Serial.println(
+                    "ALARM ON"
+                );
+
+                alarmState = true;
+            }
+
+            ledcWriteTone(
+                BUZZER_CHANNEL,
+                2000
+            );
+        }
+
+        // =========================
+        // ALARM OFF
+        // =========================
+        else {
+
+            if (alarmState) {
+
+                Serial.println(
+                    "ALARM OFF"
+                );
+
+                alarmState = false;
+            }
+
+            ledcWriteTone(
+                BUZZER_CHANNEL,
+                0
+            );
+        }
+
+        vTaskDelay(
+            100 / portTICK_PERIOD_MS
+        );
+    }
+}src/tasks/task_telegram.cpp
+
+===== src/tasks/task_telegram.cpp =====
+#include <Arduino.h>
+
+#include "core/globals.h"
+#include "core/events.h"
+
+#include "services/telegram_service.h"
+
+
+void taskTelegram(void *pv)
+{
+    SystemEvent event;
+
+    while (1)
+    {
+        if (
+            xQueueReceive(
+                telegramQueue,
+                &event,
+                portMAX_DELAY
+            )
+        )
+        {
+            String msg = "";
+
+            switch(event.type)
+            {
+                case EVENT_UNLOCK:
+
+                    msg =
+                    "🔓 SAFE OPENED";
+
+                    break;
+
+                case EVENT_LOCK:
+
+                    msg =
+                    "🔒 SAFE LOCKED";
+
+                    break;
+
+                case EVENT_UNAUTHORIZED:
+
+                    msg =
+                    "🚨 UNAUTHORIZED ACCESS";
+
+                    break;
+
+                default:
+                    continue;
+            }
+
+            sendTelegram(msg);
+
+            // IMPORTANT
+            // avoid SIM overload
+            vTaskDelay(
+                1000 /
+                portTICK_PERIOD_MS
+            );
+        }
+    }
+}src/tasks/task_fingerprint.cpp
+
+===== src/tasks/task_fingerprint.cpp =====
+// =====================================================
+// task_fingerprint.cpp
+// Task xử lý cảm biến vân tay AS608/R305
+// =====================================================
+
+#include <Arduino.h>
+#include <Adafruit_Fingerprint.h>
+#include "core/globals.h"
+#include "core/buzzer.h"
+#include "core/system_bits.h"
+
+#define FINGER_RX 16
+#define FINGER_TX 17
+
+HardwareSerial mySerial(2);
+Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
+
+void setupFingerprintSensor() {
+	mySerial.begin(57600, SERIAL_8N1, FINGER_RX, FINGER_TX);
+	finger.begin(57600);
+	if (finger.verifyPassword()) {
+		Serial.println("FINGERPRINT SENSOR OK");
+		fingerReady = true;
+	} else {
+		Serial.println("FINGERPRINT SENSOR FAIL");
+		fingerReady = false;
+	}
+}
+
+uint8_t checkFingerprint() {
+	uint8_t p = finger.getImage();
+	if (p != FINGERPRINT_OK) return 0;
+	p = finger.image2Tz();
+	if (p != FINGERPRINT_OK) return 0;
+	p = finger.fingerSearch();
+	if (p == FINGERPRINT_OK) {
+		return finger.fingerID;
+	}
+	return 0;
+}
+
+void taskFingerprint(void *pv) {
+	setupFingerprintSensor();
+	while (1) {
+		if (fingerReady) {
+			int id = checkFingerprint();
+			if (id > 0) {
+				fingerAuthenticated = true;
+				authenticated = true;
+				Serial.print("FINGERPRINT OK, ID: ");
+				Serial.println(id);
+				xEventGroupSetBits(systemEvents, BIT_FINGER_OK);
+				buzzerBeep(2000, 100);
+				lcdLine1 = "FINGER OK";
+				lcdLine2 = "SAFE OPEN";
+				lcdMessageTime = millis();
+				vTaskDelay(2000 / portTICK_PERIOD_MS);
+			} else {
+				fingerAuthenticated = false;
+			}
+		}
+		vTaskDelay(300 / portTICK_PERIOD_MS);
+	}
+}
+src/tasks/task_sim.cpp
+
+===== src/tasks/task_sim.cpp =====
+// =====================================================
+// task_sim.cpp
+// FINAL GPS PRODUCTION VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include "services/telegram_service.h"
+
+#include "core/globals.h"
+#include "core/events.h"
+
+
+// =====================================================
+// UART SIM
+// =====================================================
+HardwareSerial simSerial(1);
+
+
+// =====================================================
+// LAST EVENT
+// chống spam telegram
+// =====================================================
+EventType lastEventType =
+    EVENT_ALARM_OFF;
+
+unsigned long
+lastEventTime = 0;
+
+
+// =====================================================
+// INIT SIM
+// =====================================================
+void simInit()
+{
+    simSerial.begin(
+        115200,
+        SERIAL_8N1,
+        25,
+        26
+    );
+
+    delay(3000);
+
+    Serial.println();
+
+    Serial.println(
+        "================================="
+    );
+
+    Serial.println(
+        "[SIM] INIT DONE"
+    );
+}
+
+
+// =====================================================
+// SEND AT
+// =====================================================
+bool simSendCommand(
+    String cmd,
+    String expected,
+    int timeout = 3000
+)
+{
+    // =============================================
+    // TAKE MUTEX
+    // =============================================
+    if (
+        xSemaphoreTake(
+            simMutex,
+            5000 /
+            portTICK_PERIOD_MS
+        ) != pdTRUE
+    )
+    {
+        return false;
+    }
+
+    Serial.println();
+
+    Serial.println(
+        "[SIM] SEND: " + cmd
+    );
+
+    // =============================================
+    // CLEAR BUFFER
+    // =============================================
+    while (
+        simSerial.available()
+    )
+    {
+        simSerial.read();
+    }
+
+    simSerial.println(cmd);
+
+    String response = "";
+
+    unsigned long start =
+        millis();
+
+    while (
+        millis() - start
+        < timeout
+    )
+    {
+        while (
+            simSerial.available()
+        )
+        {
+            char c =
+                simSerial.read();
+
+            response += c;
+        }
+
+        vTaskDelay(
+            10 /
+            portTICK_PERIOD_MS
+        );
+    }
+
+    Serial.println(
+        response
+    );
+
+    // =============================================
+    // RELEASE MUTEX
+    // =============================================
+    xSemaphoreGive(
+        simMutex
+    );
+
+    return (
+        response.indexOf(expected)
+        != -1
+    );
+}
+
+
+// =====================================================
+// CONNECT NETWORK
+// =====================================================
+bool simConnect()
+{
+    Serial.println();
+
+    Serial.println(
+        "[SIM] CONNECT NETWORK"
+    );
+
+    // =============================================
+    // BASIC AT
+    // =============================================
+    if (
+        !simSendCommand(
+            "AT",
+            "OK"
+        )
+    )
+    {
+        return false;
+    }
+
+    // =============================================
+    // PDP CONTEXT
+    // =============================================
+    if (
+        !simSendCommand(
+            "AT+CGDCONT=1,\"IP\",\"v-internet\"",
+            "OK"
+        )
+    )
+    {
+        return false;
+    }
+
+    // =============================================
+    // NETWORK OPEN
+    // =============================================
+    if (
+        !simSendCommand(
+            "AT+NETOPEN",
+            "OK",
+            8000
+        )
+    )
+    {
+        return false;
+    }
+
+    Serial.println();
+
+    Serial.println(
+        "[SIM] NETWORK OK"
+    );
+
+    return true;
+}
+
+
+// =====================================================
+// APPEND GPS
+// =====================================================
+void appendGPS(String &msg)
+{
+    if (!gpsValid)
+    {
+        return;
+    }
+
+    msg +=
+    "\n\n📍 Location:\n";
+
+    msg +=
+    String(gpsLat, 6);
+
+    msg += ",";
+
+    msg +=
+    String(gpsLng, 6);
+
+    msg +=
+    "\n\n🗺 Map:\n";
+
+    msg +=
+    "https://maps.google.com/?q=";
+
+    msg +=
+    String(gpsLat, 6);
+
+    msg += ",";
+
+    msg +=
+    String(gpsLng, 6);
+}
+
+
+// =====================================================
+// HANDLE EVENT
+// =====================================================
+void handleSIMEvent(
+    SystemEvent event
+)
+{
+    // =============================================
+    // ANTI DUPLICATE
+    // =============================================
+    if (
+        event.type ==
+        lastEventType
+    )
+    {
+        if (
+            millis() - lastEventTime
+            < 3000
+        )
+        {
+            Serial.println(
+                "[SIM] DUPLICATE EVENT"
+            );
+
+            return;
+        }
+    }
+
+    // =============================================
+    // SAVE EVENT
+    // =============================================
+    lastEventType =
+        event.type;
+
+    lastEventTime =
+        millis();
+
+    // =============================================
+    // MESSAGE
+    // =============================================
+    String msg = "";
+
+    switch(event.type)
+    {
+        // =========================================
+        // SAFE OPEN
+        // =========================================
+        case EVENT_UNLOCK:
+
+            msg =
+            "🔓 SMART SAFE\n\n"
+            "Safe Opened\n"
+            "Status: OPEN";
+
+            break;
+
+        // =========================================
+        // SAFE LOCK
+        // =========================================
+        case EVENT_LOCK:
+
+            msg =
+            "🔒 SMART SAFE\n\n"
+            "Safe Locked\n"
+            "Status: SECURE";
+
+            break;
+
+        // =========================================
+        // UNAUTHORIZED
+        // =========================================
+        case EVENT_UNAUTHORIZED:
+
+            msg =
+            "🚨 SMART SAFE ALERT\n\n"
+            "Unauthorized Access\n"
+            "Status: ALARM";
+
+            appendGPS(msg);
+
+            break;
+
+        // =========================================
+        // VIBRATION
+        // =========================================
+        case EVENT_VIBRATION:
+
+            msg =
+            "🚨 SMART SAFE ALERT\n\n"
+            "Vibration Detected\n"
+            "Status: WARNING";
+
+            appendGPS(msg);
+
+            break;
+
+        // =========================================
+        // SMOKE
+        // =========================================
+        case EVENT_SMOKE:
+
+            msg =
+            "🔥 SMART SAFE ALERT\n\n"
+            "Smoke Detected\n"
+            "Status: FIRE WARNING";
+
+            appendGPS(msg);
+
+            break;
+
+        // =========================================
+        // PASSWORD FAIL
+        // =========================================
+        case EVENT_PASSWORD_FAIL:
+
+            msg =
+            "⚠️ SMART SAFE\n\n"
+            "Wrong Password Attempt";
+
+            break;
+
+        default:
+            return;
+    }
+
+    Serial.println();
+
+    Serial.println(
+        "================================="
+    );
+
+    Serial.println(
+        "[SIM] SEND TELEGRAM"
+    );
+
+    // =============================================
+    // SEND TELEGRAM
+    // =============================================
+    sendTelegram(
+        msg
+    );
+
+    // =============================================
+    // REST SIM
+    // =============================================
+    vTaskDelay(
+        1000 /
+        portTICK_PERIOD_MS
+    );
+}
+
+
+// =====================================================
+// TASK SIM
+// =====================================================
+void taskSIM(void *pv)
+{
+    // =============================================
+    // INIT SIM
+    // =============================================
+    simInit();
+
+    vTaskDelay(
+        3000 /
+        portTICK_PERIOD_MS
+    );
+
+    // =============================================
+    // CONNECT NETWORK
+    // =============================================
+    bool connected =
+        simConnect();
+
+    // =============================================
+    // ONLINE
+    // =============================================
+    if (connected)
+    {
+        sendTelegram(
+            "🟢 SMART SAFE ONLINE"
+        );
+    }
+
+    // =============================================
+    // EVENT
+    // =============================================
+    SystemEvent event;
+
+    // =============================================
+    // MAIN LOOP
+    // =============================================
+    while (1)
+    {
+        // =========================================
+        // RECEIVE EVENT
+        // =========================================
+        if (
+            xQueueReceive(
+                systemQueue,
+                &event,
+                portMAX_DELAY
+            )
+        )
+        {
+            Serial.println();
+
+            Serial.println(
+                "================================="
+            );
+
+            Serial.println(
+                "[SIM] EVENT RECEIVED"
+            );
+
+            handleSIMEvent(
+                event
+            );
+        }
+
+        // =========================================
+        // TASK DELAY
+        // =========================================
+        vTaskDelay(
+            50 /
+            portTICK_PERIOD_MS
+        );
+    }
+}src/tasks/task_logging.cpp
+
+===== src/tasks/task_logging.cpp =====
+src/tasks/task_keypad.cpp
+
+===== src/tasks/task_keypad.cpp =====
+// =====================================================
+// task_keypad.cpp
+// FINAL STABLE VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include "config/pins.h"
+
+#include "core/globals.h"
+#include "core/system_bits.h"
+#include "core/buzzer.h"
+#include "core/rfid_modes.h"
+
+// =====================================================
+// LCD
+// =====================================================
+extern String lcdLine1;
+
+extern String lcdLine2;
+
+extern unsigned long
+lcdMessageTime;
+
+
+// =====================================================
+// PASSWORD
+// =====================================================
+String passwordInput = "";
+
+
+// =====================================================
+// DEFAULT PASSWORD
+// =====================================================
+String correctPassword =
+    "1234";
+
+
+// =====================================================
+// HOLD PROTECTION
+// =====================================================
+bool keyPressed = false;
+
+
+// =====================================================
+// TASK KEYPAD
+// =====================================================
+void taskKeypad(void *pv)
+{
+    // =============================================
+    // INIT
+    // =============================================
+    pinMode(
+        KEYPAD_SCL,
+        OUTPUT
+    );
+
+    pinMode(
+        KEYPAD_SDO,
+        INPUT
+    );
+
+    digitalWrite(
+        KEYPAD_SCL,
+        HIGH
+    );
+
+    Serial.println(
+        "KEYPAD TASK START"
+    );
+
+    // =============================================
+    // MAIN LOOP
+    // =============================================
+    while (1)
+    {
+        // =========================================
+        // GET EVENT BITS
+        // =========================================
+        EventBits_t bits =
+            xEventGroupGetBits(
+                systemEvents
+            );
+
+        // =========================================
+        // ADMIN SCREEN
+        // =========================================
+        // =========================================
+// ADMIN SCREEN
+// =========================================
+if (
+    (bits & BIT_ADMIN_MODE) &&
+    currentRFIDMode ==
+    RFID_MODE_NORMAL
+)
+{
+    if (
+        lcdLine1 != "ADMIN MODE"
+    )
+    {
+        lcdLine1 =
+            "ADMIN MODE";
+
+        lcdLine2 =
+            "1ADD 2DEL 3EXIT";
+    }
+}
+
+        // =========================================
+        // WAIT RFID
+        // =========================================
+        else if (
+            !(bits & BIT_RFID_OK) &&
+            !adminMode
+        )
+        {
+            if (
+    lcdLine1 != "SAFE LOCKED"
+)
+{
+    lcdLine1 =
+        "SAFE LOCKED";
+
+    lcdLine2 =
+        "SCAN RFID";
+}
+
+            vTaskDelay(
+                100 /
+                portTICK_PERIOD_MS
+            );
+
+            continue;
+        }
+
+        // =========================================
+        // READ KEYPAD
+        // =========================================
+        uint8_t keys = 0;
+
+        for (
+            int i = 0;
+            i < 8;
+            i++
+        )
+        {
+            digitalWrite(
+                KEYPAD_SCL,
+                LOW
+            );
+
+            delayMicroseconds(
+                100
+            );
+
+            int bitValue =
+                digitalRead(
+                    KEYPAD_SDO
+                );
+
+            if (bitValue)
+            {
+                keys |=
+                    (1 << i);
+            }
+
+            digitalWrite(
+                KEYPAD_SCL,
+                HIGH
+            );
+
+            delayMicroseconds(
+                100
+            );
+        }
+
+        // =========================================
+        // NO KEY
+        // =========================================
+        if (keys == 0xFF)
+        {
+            keyPressed = false;
+
+            vTaskDelay(
+                30 /
+                portTICK_PERIOD_MS
+            );
+
+            continue;
+        }
+
+        // =========================================
+        // HOLD PROTECTION
+        // =========================================
+        if (keyPressed)
+        {
+            vTaskDelay(
+                30 /
+                portTICK_PERIOD_MS
+            );
+
+            continue;
+        }
+
+        keyPressed = true;
+
+        // =========================================
+        // DETECT KEY
+        // =========================================
+        for (
+            int i = 0;
+            i < 8;
+            i++
+        )
+        {
+            // LOW = PRESSED
+            if (
+                !(keys & (1 << i))
+            )
+            {
+                int key =
+                    i + 1;
+
+                Serial.print(
+                    "KEY: "
+                );
+
+                Serial.println(
+                    key
+                );
+
+                buzzerBeep(
+                    2200,
+                    80
+                );
+
+                // =================================
+// ADMIN MODE
+// =================================
+if (adminMode)
+{
+    // =============================
+    // ADD RFID
+    // =============================
+    if (key == 1)
+    {
+        currentRFIDMode =
+            RFID_MODE_ADD;
+
+        // EXIT ADMIN SCREEN
+        xEventGroupClearBits(
+            systemEvents,
+            BIT_ADMIN_MODE
+        );
+
+        Serial.println(
+            "ADD RFID MODE"
+        );
+
+        break;
+    }
+
+    // =============================
+    // DELETE RFID
+    // =============================
+    else if (key == 2)
+    {
+        currentRFIDMode =
+            RFID_MODE_DELETE;
+
+        // EXIT ADMIN SCREEN
+        xEventGroupClearBits(
+            systemEvents,
+            BIT_ADMIN_MODE
+        );
+
+        Serial.println(
+            "DELETE RFID MODE"
+        );
+
+        break;
+    }
+
+    // =============================
+    // EXIT ADMIN
+    // =============================
+    else if (key == 3)
+    {
+        adminMode = false;
+
+        currentRFIDMode =
+            RFID_MODE_NORMAL;
+
+        xEventGroupClearBits(
+            systemEvents,
+            BIT_ADMIN_MODE
+        );
+
+        lcdLine1 =
+            "EXIT ADMIN";
+
+        lcdLine2 =
+            "";
+
+        lcdMessageTime =
+            millis();
+
+        Serial.println(
+            "EXIT ADMIN"
+        );
+
+        break;
+    }
+
+    continue;
+}
+
+                // =================================
+                // PASSWORD INPUT
+                // =================================
+                passwordInput +=
+                    String(key);
+
+                Serial.print(
+                    "PASSWORD: "
+                );
+
+                Serial.println(
+                    passwordInput
+                );
+
+                lcdLine1 =
+                    "ENTER PASS";
+
+                lcdLine2 = "";
+
+                for (
+                    int j = 0;
+                    j <
+                    passwordInput.length();
+                    j++
+                )
+                {
+                    lcdLine2 += "*";
+                }
+
+                lcdMessageTime =
+                    millis();
+
+                break;
+            }
+        }
+
+        // =========================================
+        // CHECK PASSWORD
+        // =========================================
+        if (
+            passwordInput.length()
+            >= 4
+        )
+        {
+            // =====================================
+            // PASSWORD OK
+            // =====================================
+            if (
+                passwordInput ==
+                correctPassword
+            )
+            {
+                Serial.println(
+                    "PASSWORD OK"
+                );
+
+                authenticated =
+                    true;
+
+                failedAttempts = 0;
+
+                // AUTH SUCCESS
+                xEventGroupSetBits(
+                    systemEvents,
+                    BIT_AUTH_OK
+                );
+
+                // CLEAR ALARM
+                xEventGroupClearBits(
+                    systemEvents,
+                    BIT_ALARM_ACTIVE
+                );
+
+                // CLEAR FLOW
+                xEventGroupClearBits(
+                    systemEvents,
+                    BIT_RFID_OK
+                );
+
+                xEventGroupClearBits(
+                    systemEvents,
+                    BIT_FINGER_OK
+                );
+
+                // LCD
+                lcdLine1 =
+                    "ACCESS OK";
+
+                lcdLine2 =
+                    "SAFE OPEN";
+
+                lcdMessageTime =
+                    millis();
+
+                // BUZZER
+                buzzerBeep(
+                    3000,
+                    200
+                );
+
+                Serial.println(
+                    "SAFE UNLOCKED"
+                );
+            }
+
+            // =====================================
+            // PASSWORD FAIL
+            // =====================================
+            else
+            {
+                Serial.println(
+                    "PASSWORD FAIL"
+                );
+
+                authenticated =
+                    false;
+
+                failedAttempts++;
+
+                xEventGroupClearBits(
+                    systemEvents,
+                    BIT_AUTH_OK
+                );
+
+                lcdLine1 =
+                    "WRONG PASS";
+
+                lcdLine2 =
+                    "TRY AGAIN";
+
+                lcdMessageTime =
+                    millis();
+
+                buzzerBeep(
+                    1000,
+                    500
+                );
+
+                Serial.print(
+                    "FAILED: "
+                );
+
+                Serial.println(
+                    failedAttempts
+                );
+
+                // TOO MANY FAILS
+                if (
+                    failedAttempts >= 3
+                )
+                {
+                    Serial.println(
+                        "ALARM ACTIVE"
+                    );
+
+                    xEventGroupSetBits(
+                        systemEvents,
+                        BIT_ALARM_ACTIVE
+                    );
+                }
+            }
+
+            // =====================================
+            // SHOW RESULT
+            // =====================================
+            vTaskDelay(
+                1500 /
+                portTICK_PERIOD_MS
+            );
+
+            // =====================================
+            // RESET
+            // =====================================
+            passwordInput = "";
+
+            lcdLine1 = "";
+
+            lcdLine2 = "";
+        }
+
+        // =========================================
+        // TASK DELAY
+        // =========================================
+        vTaskDelay(
+            100 /
+            portTICK_PERIOD_MS
+        );
+    }
+}src/tasks/task_rfid.cpp
+
+===== src/tasks/task_rfid.cpp =====
+// =====================================================
+// task_rfid.cpp
+// FINAL STABLE VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include <SPI.h>
+#include <MFRC522.h>
+
+#include "config/pins.h"
+
+#include "core/globals.h"
+#include "core/system_bits.h"
+
+#include "core/buzzer.h"
+#include "core/rfid_modes.h"
+#include "core/rfid_storage.h"
+
+
+// =====================================================
+// RFID OBJECT
+// =====================================================
+MFRC522 rfid(
+    RFID_SS,
+    RFID_RST
+);
+
+
+// =====================================================
+// LCD MESSAGE
+// =====================================================
+extern String lcdLine1;
+
+extern String lcdLine2;
+
+extern unsigned long
+lcdMessageTime;
+
+
+// =====================================================
+// MASTER CARD
+// =====================================================
+String masterUID =
+    "23de1907";
+
+
+// =====================================================
+// CHECK USER CARD
+// =====================================================
+bool isUserCard(
+    String uid
+)
+{
+    for (
+        int i = 0;
+        i < totalCards;
+        i++
+    )
+    {
+        if (
+            uid == userCards[i]
+        )
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+// =====================================================
+// SHOW LCD MESSAGE
+// =====================================================
+void showLCDMessage(
+    String line1,
+    String line2,
+    int duration = 2000
+)
+{
+    lcdLine1 = line1;
+
+    lcdLine2 = line2;
+
+    lcdMessageTime =
+        millis();
+}
+
+
+// =====================================================
+// ADD CARD
+// =====================================================
+void addCard(
+    String uid
+)
+{
+    // =============================================
+    // CARD EXISTS
+    // =============================================
+    if (
+        isUserCard(uid)
+    )
+    {
+        showLCDMessage(
+            "CARD EXISTS",
+            ""
+        );
+
+        buzzerBeep(
+            1000,
+            300
+        );
+
+        return;
+    }
+
+    // =============================================
+    // BLOCK MASTER
+    // =============================================
+    if (
+        uid == masterUID
+    )
+    {
+        showLCDMessage(
+            "MASTER BLOCK",
+            ""
+        );
+
+        buzzerBeep(
+            1000,
+            300
+        );
+
+        return;
+    }
+
+    // =============================================
+    // MEMORY FULL
+    // =============================================
+    if (
+        totalCards >= 20
+    )
+    {
+        showLCDMessage(
+            "MEMORY FULL",
+            ""
+        );
+
+        buzzerBeep(
+            1000,
+            300
+        );
+
+        return;
+    }
+
+    // =============================================
+    // SAVE CARD
+    // =============================================
+    saveRFIDCard(uid);
+
+    Serial.println(
+        "CARD ADDED"
+    );
+
+    showLCDMessage(
+        "CARD ADDED",
+        uid
+    );
+
+    buzzerBeep(
+        3000,
+        200
+    );
+}
+
+
+// =====================================================
+// DELETE CARD
+// =====================================================
+void deleteCard(
+    String uid
+)
+{
+    // =============================================
+    // NOT FOUND
+    // =============================================
+    if (
+        !isUserCard(uid)
+    )
+    {
+        showLCDMessage(
+            "NOT FOUND",
+            ""
+        );
+
+        buzzerBeep(
+            1000,
+            500
+        );
+
+        return;
+    }
+
+    // =============================================
+    // DELETE
+    // =============================================
+    deleteRFIDCard(uid);
+
+    Serial.println(
+        "CARD DELETED"
+    );
+
+    showLCDMessage(
+        "CARD DELETE",
+        uid
+    );
+
+    buzzerBeep(
+        2500,
+        200
+    );
+}
+
+
+// =====================================================
+// TASK RFID
+// =====================================================
+void taskRFID(void *pv)
+{
+    // =============================================
+    // INIT SPI
+    // =============================================
+    SPI.begin(
+        SPI_SCK,
+        SPI_MISO,
+        SPI_MOSI,
+        RFID_SS
+    );
+
+    // =============================================
+    // INIT RFID
+    // =============================================
+    rfid.PCD_Init();
+
+    Serial.println(
+        "RFID TASK STARTED"
+    );
+
+    // =============================================
+    // MAIN LOOP
+    // =============================================
+    while (1)
+    {
+        // =========================================
+        // WAIT CARD
+        // =========================================
+        if (
+            !rfid.PICC_IsNewCardPresent()
+        )
+        {
+            vTaskDelay(
+                50 /
+                portTICK_PERIOD_MS
+            );
+
+            continue;
+        }
+
+        // =========================================
+        // READ CARD
+        // =========================================
+        if (
+            !rfid.PICC_ReadCardSerial()
+        )
+        {
+            vTaskDelay(
+                50 /
+                portTICK_PERIOD_MS
+            );
+
+            continue;
+        }
+
+        // =========================================
+        // GET UID
+        // =========================================
+        String uid = "";
+
+        for (
+            byte i = 0;
+            i < rfid.uid.size;
+            i++
+        )
+        {
+            if (
+                rfid.uid.uidByte[i]
+                < 0x10
+            )
+            {
+                uid += "0";
+            }
+
+            uid += String(
+                rfid.uid.uidByte[i],
+                HEX
+            );
+        }
+
+        uid.toLowerCase();
+
+        Serial.print(
+            "CARD UID: "
+        );
+
+        Serial.println(
+            uid
+        );
+
+        // =========================================
+        // ADD MODE
+        // =========================================
+        if (
+            currentRFIDMode ==
+            RFID_MODE_ADD
+        )
+        {
+            addCard(uid);
+            showLCDMessage(
+            "ADD SUCCESS",
+            "",
+            2000
+        );
+            currentRFIDMode =
+                RFID_MODE_NORMAL;
+
+            adminMode = false;
+
+            xEventGroupClearBits(
+                systemEvents,
+                BIT_ADMIN_MODE
+            );
+
+            continue;
+        }
+
+        // =========================================
+        // DELETE MODE
+        // =========================================
+        if (
+            currentRFIDMode ==
+            RFID_MODE_DELETE
+        )
+        {
+            deleteCard(uid);
+            showLCDMessage(
+    "DELETE OK",
+    "",
+    2000
+);
+            currentRFIDMode =
+                RFID_MODE_NORMAL;
+
+            adminMode = false;
+
+            xEventGroupClearBits(
+                systemEvents,
+                BIT_ADMIN_MODE
+            );
+
+            continue;
+        }
+
+        // =========================================
+        // MASTER CARD
+        // =========================================
+        if (
+            uid == masterUID
+        )
+        {
+            Serial.println(
+                "MASTER CARD"
+            );
+
+            adminMode = true;
+
+            xEventGroupSetBits(
+                systemEvents,
+                BIT_ADMIN_MODE
+            );
+            buzzerBeep(
+                3000,
+                200
+            );
+        }
+
+        // =========================================
+        // USER CARD
+        // =========================================
+        else if (
+            isUserCard(uid)
+        )
+        {
+            Serial.println(
+                "USER CARD OK"
+            );
+
+            // =====================================
+            // RESET FINGER
+            // =====================================
+            fingerReady = false;
+
+            fingerAuthenticated =
+                false;
+
+            xEventGroupClearBits(
+                systemEvents,
+                BIT_FINGER_OK
+            );
+
+            // =====================================
+            // RFID AUTH
+            // =====================================
+            rfidAuthenticated =
+                true;
+
+            xEventGroupSetBits(
+                systemEvents,
+                BIT_RFID_OK
+            );
+
+            // =====================================
+            // CLEAR ALARM
+            // =====================================
+            xEventGroupClearBits(
+                systemEvents,
+                BIT_ALARM_ACTIVE
+            );
+
+            // =====================================
+            // LCD
+            // =====================================
+            showLCDMessage(
+                "CARD OK",
+                "SCAN FINGER",
+                2000
+            );
+
+            // =====================================
+            // BUZZER
+            // =====================================
+            buzzerBeep(
+                2500,
+                150
+            );
+        }
+
+        // =========================================
+        // INVALID CARD
+        // =========================================
+        else
+        {
+            Serial.println(
+                "INVALID CARD"
+            );
+
+            showLCDMessage(
+                "INVALID CARD",
+                "ACCESS DENIED"
+            );
+
+            buzzerBeep(
+                1000,
+                500
+            );
+        }
+
+        // =========================================
+        // STOP RFID
+        // =========================================
+        rfid.PICC_HaltA();
+
+        rfid.PCD_StopCrypto1();
+
+        vTaskDelay(
+            1000 /
+            portTICK_PERIOD_MS
+        );
+    }
+}src/tasks/task_lcd.cpp
+
+===== src/tasks/task_lcd.cpp =====
+// =====================================================
+// task_lcd.cpp
+// =====================================================
+
+#include <Arduino.h>
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+#include "config/pins.h"
+
+#include "core/globals.h"
+#include "core/system_bits.h"
+
+#include "core/rfid_modes.h"
+
+
+// =====================================================
+// LCD CONFIG
+// =====================================================
+LiquidCrystal_I2C lcd(
+    0x27,
+    16,
+    2
+);
+
+
+// =====================================================
+// LCD CACHE
+// =====================================================
+String lastLine1 = "";
+
+String lastLine2 = "";
+
+
+// =====================================================
+// LCD MESSAGE TIMER
+// =====================================================
+extern unsigned long
+lcdMessageTime;
+
+
+// =====================================================
+// EXTERNAL LCD MESSAGE
+// =====================================================
+extern String lcdLine1;
+
+extern String lcdLine2;
+
+
+// =====================================================
+// CENTER TEXT
+// =====================================================
+String centerText(
+    String text
+)
+{
+    int len =
+        text.length();
+
+    if (len > 16)
+    {
+        text =
+            text.substring(
+                0,
+                16
+            );
+
+        len = 16;
+    }
+
+    int leftPadding =
+        (16 - len) / 2;
+
+    String result = "";
+
+    for (
+        int i = 0;
+        i < leftPadding;
+        i++
+    )
+    {
+        result += " ";
+    }
+
+    result += text;
+
+    return result;
+}
+
+
+// =====================================================
+// CLEAR LCD
+// =====================================================
+void clearLCD()
+{
+    lcd.setCursor(0,0);
+
+    lcd.print(
+        "                "
+    );
+
+    lcd.setCursor(0,1);
+
+    lcd.print(
+        "                "
+    );
+}
+
+
+// =====================================================
+// UPDATE LCD
+// =====================================================
+void updateLCD(
+    String line1,
+    String line2
+)
+{
+    // =============================================
+    // FPS LIMIT
+    // =============================================
+    static unsigned long
+    lastUpdate = 0;
+
+    if (
+        millis() - lastUpdate
+        < 200
+    )
+    {
+        return;
+    }
+
+    lastUpdate =
+        millis();
+
+    // =============================================
+    // SKIP SAME CONTENT
+    // =============================================
+    if (
+        line1 == lastLine1 &&
+        line2 == lastLine2
+    )
+    {
+        return;
+    }
+
+    lastLine1 = line1;
+
+    lastLine2 = line2;
+
+    clearLCD();
+
+    lcd.setCursor(0,0);
+
+    lcd.print(
+        centerText(line1)
+    );
+
+    lcd.setCursor(0,1);
+
+    lcd.print(
+        centerText(line2)
+    );
+}
+
+
+// =====================================================
+// TASK LCD
+// =====================================================
+void taskLCD(void *pv)
+{
+    Wire.begin(
+        I2C_SDA,
+        I2C_SCL
+    );
+
+    Wire.setClock(
+        100000
+    );
+
+    lcd.init();
+
+    lcd.backlight();
+
+    Serial.println(
+        "LCD TASK STARTED"
+    );
+
+    updateLCD(
+        "SMART SAFE",
+        "STARTING..."
+    );
+
+    vTaskDelay(
+        2000 / portTICK_PERIOD_MS
+    );
+
+    while (1)
+    {
+        EventBits_t bits =
+            xEventGroupGetBits(
+                systemEvents
+            );
+
+        // =========================================
+        // ALARM
+        // =========================================
+        if (
+            bits & BIT_ALARM_ACTIVE
+        )
+        {
+            updateLCD(
+                "!!! ALERT !!!",
+                "SECURITY"
+            );
+        }
+
+        // =========================================
+        // ADMIN MODE
+        // =========================================
+        else if (
+            bits & BIT_ADMIN_MODE
+        )
+        {
+            updateLCD(
+                "ADMIN MODE",
+                "1ADD 2DEL 3EXIT"
+            );
+        }
+
+        // =========================================
+        // ADD MODE
+        // =========================================
+        else if (
+            currentRFIDMode ==
+            RFID_MODE_ADD
+        )
+        {
+            updateLCD(
+                "ADD MODE",
+                "SCAN CARD"
+            );
+        }
+
+        // =========================================
+        // DELETE MODE
+        // =========================================
+        else if (
+            currentRFIDMode ==
+            RFID_MODE_DELETE
+        )
+        {
+            updateLCD(
+                "DELETE MODE",
+                "SCAN CARD"
+            );
+        }
+
+        // =========================================
+        // AUTH OK
+        // =========================================
+        else if (
+            bits & BIT_AUTH_OK
+        )
+        {
+            updateLCD(
+                "ACCESS OK",
+                "SAFE OPEN"
+            );
+        }
+
+        // =========================================
+        // CUSTOM MESSAGE
+        // =========================================
+        else if (
+            lcdLine1 != "" &&
+            millis() - lcdMessageTime
+            < 3000
+        )
+        {
+            updateLCD(
+                lcdLine1,
+                lcdLine2
+            );
+        }
+
+        // =========================================
+        // DEFAULT
+        // =========================================
+        else
+        {
+            updateLCD(
+                "SAFE LOCKED",
+                "SCAN RFID"
+            );
+        }
+
+        vTaskDelay(
+            300 / portTICK_PERIOD_MS
+        );
+    }
+}src/tasks/task_auth.cpp
+
+===== src/tasks/task_auth.cpp =====
+src/tasks/task_sensor.cpp
+
+===== src/tasks/task_sensor.cpp =====
+// =====================================================
+// task_sensor.cpp
+// FINAL STABLE VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include "config/pins.h"
+
+#include "core/globals.h"
+#include "core/system_bits.h"
+#include "core/events.h"
+#include "core/safe_state.h"
+
+
+// =====================================================
+// TASK SENSOR
+// =====================================================
+void taskSensor(void *pv)
+{
+    // =================================================
+    // INIT SENSOR
+    // =================================================
+    pinMode(
+        VIBRATION_PIN,
+        INPUT_PULLUP
+    );
+
+    pinMode(
+        DOOR_PIN,
+        INPUT_PULLUP
+    );
+
+    // =================================================
+    // SW420 VARIABLES
+    // =================================================
+    int lastVibrationState =
+        HIGH;
+
+    int vibrationCount = 0;
+
+    unsigned long
+    firstTriggerTime = 0;
+
+    unsigned long
+    lastVibrationAlert = 0;
+
+    // =================================================
+    // DOOR VARIABLES
+    // =================================================
+    int lastDoorState =
+        LOW;
+
+    unsigned long
+    lastDoorEvent = 0;
+
+    bool unauthorizedSent =
+        false;
+
+    bool lockSent =
+        false;
+
+    // =================================================
+    // EVENT OBJECT
+    // =================================================
+    SystemEvent event;
+
+    Serial.println(
+        "SENSOR TASK STARTED"
+    );
+
+    // =================================================
+    // MAIN LOOP
+    // =================================================
+    while (1)
+    {
+        // =============================================
+        // VIBRATION SENSOR
+        // =============================================
+        int currentVibrationState =
+            digitalRead(
+                VIBRATION_PIN
+            );
+
+        // falling edge
+        if (
+            lastVibrationState == HIGH &&
+            currentVibrationState == LOW
+        )
+        {
+            // first trigger
+            if (vibrationCount == 0)
+            {
+                firstTriggerTime =
+                    millis();
+            }
+
+            vibrationCount++;
+
+            Serial.print(
+                "Vibration Count = "
+            );
+
+            Serial.println(
+                vibrationCount
+            );
+
+            // debounce
+            vTaskDelay(
+                20 /
+                portTICK_PERIOD_MS
+            );
+        }
+
+        lastVibrationState =
+            currentVibrationState;
+
+        // =============================================
+        // VIBRATION ALERT
+        // =============================================
+        if (
+            vibrationCount >= 12 &&
+            millis() - firstTriggerTime
+            < 2000
+        )
+        {
+            // anti spam
+            if (
+                millis() - lastVibrationAlert
+                > 10000
+            )
+            {
+                Serial.println();
+
+                Serial.println(
+                    "!!! VIBRATION ALERT !!!"
+                );
+
+                // =====================================
+                // SAFE STATE
+                // =====================================
+                safeState =
+                    SAFE_ALARM;
+
+                // =====================================
+                // EVENT
+                // =====================================
+                event.type =
+                    EVENT_VIBRATION;
+
+                strcpy(
+                    event.message,
+                    "SAFE_ALERT_VIBRATION"
+                );
+
+                // =====================================
+                // SEND QUEUE
+                // =====================================
+                xQueueSend(
+                    systemQueue,
+                    &event,
+                    0
+                );
+
+                // =====================================
+                // ALARM ON
+                // =====================================
+                xEventGroupSetBits(
+                    systemEvents,
+                    BIT_ALARM_ACTIVE
+                );
+
+                lastVibrationAlert =
+                    millis();
+            }
+
+            vibrationCount = 0;
+        }
+
+        // =============================================
+        // RESET COUNTER
+        // =============================================
+        if (
+            millis() - firstTriggerTime
+            > 2000
+        )
+        {
+            vibrationCount = 0;
+        }
+
+        // =============================================
+        // DOOR SENSOR
+        // =============================================
+        int currentDoorState =
+            digitalRead(
+                DOOR_PIN
+            );
+
+        // =============================================
+        // DOOR STATE CHANGE
+        // =============================================
+        if (
+            currentDoorState !=
+            lastDoorState
+        )
+        {
+            // debounce
+            vTaskDelay(
+                80 /
+                portTICK_PERIOD_MS
+            );
+
+            currentDoorState =
+                digitalRead(
+                    DOOR_PIN
+                );
+
+            // double check
+            if (
+                currentDoorState !=
+                lastDoorState
+            )
+            {
+                EventBits_t bits =
+                    xEventGroupGetBits(
+                        systemEvents
+                    );
+
+                // =====================================
+                // DOOR OPEN
+                // =====================================
+                if (
+                    currentDoorState == HIGH
+                )
+                {
+                    Serial.println();
+
+                    Serial.println(
+                        "DOOR OPEN"
+                    );
+
+                    xEventGroupSetBits(
+                        systemEvents,
+                        BIT_DOOR_OPEN
+                    );
+
+                    lockSent = false;
+
+                    // =================================
+                    // AUTHORIZED
+                    // =================================
+                    if (
+                        bits & BIT_AUTH_OK
+                    )
+                    {
+                        Serial.println(
+                            "AUTHORIZED ACCESS"
+                        );
+
+                        safeState =
+                            SAFE_OPEN;
+
+                        event.type =
+                            EVENT_UNLOCK;
+
+                        strcpy(
+                            event.message,
+                            "SAFE_OPENED"
+                        );
+
+                        xQueueSend(
+                            systemQueue,
+                            &event,
+                            0
+                        );
+                    }
+
+                    // =================================
+                    // UNAUTHORIZED
+                    // =================================
+                    else
+                    {
+                        // anti spam
+                        if (
+                            !unauthorizedSent &&
+                            millis() - lastDoorEvent
+                            > 10000
+                        )
+                        {
+                            Serial.println(
+                                "!!! UNAUTHORIZED ACCESS !!!"
+                            );
+
+                            unauthorizedSent =
+                                true;
+
+                            lastDoorEvent =
+                                millis();
+
+                            safeState =
+                                SAFE_ALARM;
+
+                            event.type =
+                                EVENT_UNAUTHORIZED;
+
+                            strcpy(
+                                event.message,
+                                "SAFE_ALERT_UNAUTHORIZED"
+                            );
+
+                            xQueueSend(
+                                systemQueue,
+                                &event,
+                                0
+                            );
+
+                            xEventGroupSetBits(
+                                systemEvents,
+                                BIT_ALARM_ACTIVE
+                            );
+                        }
+                    }
+                }
+
+                // =====================================
+                // DOOR CLOSED
+                // =====================================
+                else
+                {
+                    Serial.println();
+
+                    Serial.println(
+                        "DOOR CLOSED"
+                    );
+
+                    xEventGroupClearBits(
+                        systemEvents,
+                        BIT_DOOR_OPEN
+                    );
+
+                    xEventGroupClearBits(
+                        systemEvents,
+                        BIT_AUTH_OK
+                    );
+
+                    xEventGroupClearBits(
+                        systemEvents,
+                        BIT_ALARM_ACTIVE
+                    );
+
+                    unauthorizedSent =
+                        false;
+
+                    // anti spam
+                    if (
+                        !lockSent
+                    )
+                    {
+                        lockSent = true;
+
+                        safeState =
+                            SAFE_LOCKED;
+
+                        event.type =
+                            EVENT_LOCK;
+
+                        strcpy(
+                            event.message,
+                            "SAFE_LOCKED"
+                        );
+
+                        xQueueSend(
+                            systemQueue,
+                            &event,
+                            0
+                        );
+
+                        Serial.println(
+                            "SAFE LOCKED"
+                        );
+                    }
+                }
+
+                lastDoorState =
+                    currentDoorState;
+            }
+        }
+
+        // =============================================
+        // TASK DELAY
+        // =============================================
+        vTaskDelay(
+            20 /
+            portTICK_PERIOD_MS
+        );
+    }
+}src/drivers/buzzer_driver.cpp
+
+===== src/drivers/buzzer_driver.cpp =====
+src/drivers/rfid_driver.cpp
+
+===== src/drivers/rfid_driver.cpp =====
+src/drivers/servo_driver.cpp
+
+===== src/drivers/servo_driver.cpp =====
+src/drivers/lcd_driver.cpp
+
+===== src/drivers/lcd_driver.cpp =====
+src/core/buzzer.cpp
+
+===== src/core/buzzer.cpp =====
+#include <Arduino.h>
+
+#include "config/pins.h"
+
+#define BUZZER_CHANNEL 7
+
+void buzzerBeep(
+    int frequency,
+    int duration
+) {
+
+    ledcWriteTone(
+        BUZZER_CHANNEL,
+        frequency
+    );
+
+    vTaskDelay(
+        duration / portTICK_PERIOD_MS
+    );
+
+    ledcWriteTone(
+        BUZZER_CHANNEL,
+        0
+    );
+}src/core/rfid_storage.cpp
+
+===== src/core/rfid_storage.cpp =====
+#include <Arduino.h>
+
+#include <Preferences.h>
+
+#include "core/globals.h"
+
+Preferences rfidPrefs;
+
+// =====================================================
+// EXTERNAL RFID
+// =====================================================
+extern String userCards[20];
+
+extern int totalCards;
+
+
+// =====================================================
+// LOAD CARDS
+// =====================================================
+void loadRFIDCards() {
+
+    rfidPrefs.begin(
+        "rfid",
+        false
+    );
+
+    totalCards =
+        rfidPrefs.getInt(
+            "count",
+            0
+        );
+
+    Serial.print(
+        "LOAD RFID COUNT: "
+    );
+
+    Serial.println(
+        totalCards
+    );
+
+    for (int i = 0;
+         i < totalCards;
+         i++) {
+
+        String key =
+            "card" + String(i);
+
+        userCards[i] =
+            rfidPrefs.getString(
+                key.c_str(),
+                ""
+            );
+
+        Serial.print(
+            "LOAD CARD: "
+        );
+
+        Serial.println(
+            userCards[i]
+        );
+    }
+
+    rfidPrefs.end();
+}
+
+
+// =====================================================
+// SAVE CARD
+// =====================================================
+void saveRFIDCard(String uid) {
+
+    rfidPrefs.begin(
+        "rfid",
+        false
+    );
+
+    userCards[totalCards] =
+        uid;
+
+    String key =
+        "card" + String(totalCards);
+
+    rfidPrefs.putString(
+        key.c_str(),
+        uid
+    );
+
+    totalCards++;
+
+    rfidPrefs.putInt(
+        "count",
+        totalCards
+    );
+
+    rfidPrefs.end();
+
+    Serial.println(
+        "RFID SAVED FLASH"
+    );
+}
+
+
+// =====================================================
+// DELETE CARD
+// =====================================================
+void deleteRFIDCard(String uid) {
+
+    rfidPrefs.begin(
+        "rfid",
+        false
+    );
+
+    int foundIndex = -1;
+
+    for (int i = 0;
+         i < totalCards;
+         i++) {
+
+        if (userCards[i] == uid) {
+
+            foundIndex = i;
+
+            break;
+        }
+    }
+
+    // not found
+    if (foundIndex == -1) {
+
+        rfidPrefs.end();
+
+        return;
+    }
+
+    // shift RAM
+    for (int i = foundIndex;
+         i < totalCards - 1;
+         i++) {
+
+        userCards[i] =
+            userCards[i + 1];
+    }
+
+    totalCards--;
+
+    // rewrite flash
+    rfidPrefs.clear();
+
+    rfidPrefs.putInt(
+        "count",
+        totalCards
+    );
+
+    for (int i = 0;
+         i < totalCards;
+         i++) {
+
+        String key =
+            "card" + String(i);
+
+        rfidPrefs.putString(
+            key.c_str(),
+            userCards[i]
+        );
+    }
+
+    rfidPrefs.end();
+
+    Serial.println(
+        "RFID DELETED FLASH"
+    );
+}src/storage/spiffs.cpp
+
+===== src/storage/spiffs.cpp =====
+src/main.cpp
+
+===== src/main.cpp =====
+// =====================================================
+// main.cpp
+// FINAL GPS + TELEGRAM VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include "core/globals.h"
+#include "core/events.h"
+#include "core/rfid_storage.h"
+#include "core/buzzer.h"
+
+
+// =====================================================
+// GLOBAL QUEUE
+// =====================================================
+QueueHandle_t systemQueue;
+
+// TELEGRAM QUEUE
+QueueHandle_t telegramQueue;
+
+// LCD QUEUE
+QueueHandle_t lcdQueue;
+
+
+// =====================================================
+// SIM MUTEX
+// =====================================================
+SemaphoreHandle_t simMutex;
+
+
+// =====================================================
+// EVENT GROUP
+// =====================================================
+EventGroupHandle_t systemEvents;
+
+
+// =====================================================
+// SYSTEM STATE
+// =====================================================
+SystemState currentState =
+    STATE_LOCKED;
+
+SafeState safeState =
+    SAFE_LOCKED;
+
+
+// =====================================================
+// RFID MODE
+// =====================================================
+RFIDMode currentRFIDMode =
+    RFID_MODE_NORMAL;
+
+
+// =====================================================
+// FAILED PASSWORD
+// =====================================================
+int failedAttempts = 0;
+
+
+// =====================================================
+// AUTH STATES
+// =====================================================
+bool authenticated = false;
+
+bool rfidAuthenticated = false;
+
+bool fingerAuthenticated = false;
+
+bool adminMode = false;
+
+
+// =====================================================
+// GPS GLOBAL
+// =====================================================
+double gpsLat = 0;
+
+double gpsLng = 0;
+
+bool gpsValid = false;
+
+
+// =====================================================
+// FINGER STATE
+// =====================================================
+bool fingerReady = false;
+
+
+// =====================================================
+// LCD
+// =====================================================
+String lcdLine1 = "";
+
+String lcdLine2 = "";
+
+unsigned long
+lcdMessageTime = 0;
+
+
+// =====================================================
+// TELEGRAM TIMER
+// =====================================================
+unsigned long
+lastTelegramTime = 0;
+
+
+// =====================================================
+// RFID STORAGE
+// =====================================================
+String userCards[20];
+
+int totalCards = 0;
+
+
+// =====================================================
+// TASK DECLARE
+// =====================================================
+void taskAlarm(void *pv);
+
+void taskSensor(void *pv);
+
+void taskKeypad(void *pv);
+
+void taskServo(void *pv);
+
+void taskLCD(void *pv);
+
+void taskRFID(void *pv);
+
+void taskSIM(void *pv);
+
+void taskTelegram(void *pv);
+
+void taskGPS(void *pv);
+
+void taskFingerprint(void *pv);
+
+
+// =====================================================
+// SETUP
+// =====================================================
+void setup()
+{
+    // =============================================
+    // SERIAL
+    // =============================================
+    Serial.begin(115200); 
+
+    delay(1000);
+
+    Serial.println();
+
+    Serial.println(
+        "================================="
+    );
+
+    Serial.println(
+        "SMART SAFE SYSTEM START"
+    );
+
+    Serial.println(
+        "================================="
+    );
+
+    // =============================================
+    // SYSTEM QUEUE
+    // =============================================
+    systemQueue =
+        xQueueCreate(
+            20,
+            sizeof(SystemEvent)
+        );
+
+    // =============================================
+    // TELEGRAM QUEUE
+    // =============================================
+    telegramQueue =
+        xQueueCreate(
+            20,
+            sizeof(SystemEvent)
+        );
+
+    // =============================================
+    // LCD QUEUE
+    // =============================================
+    lcdQueue =
+        xQueueCreate(
+            10,
+            sizeof(LCDMessage)
+        );
+
+    // =============================================
+    // SIM MUTEX
+    // =============================================
+    simMutex =
+        xSemaphoreCreateMutex();
+
+    // =============================================
+    // EVENT GROUP
+    // =============================================
+    systemEvents =
+        xEventGroupCreate();
+
+    // =============================================
+    // CHECK CREATE
+    // =============================================
+    if (
+        systemQueue == NULL
+    )
+    {
+        Serial.println(
+            "SYSTEM QUEUE FAIL"
+        );
+    }
+
+    if (
+        telegramQueue == NULL
+    )
+    {
+        Serial.println(
+            "TELEGRAM QUEUE FAIL"
+        );
+    }
+
+    if (
+        lcdQueue == NULL
+    )
+    {
+        Serial.println(
+            "LCD QUEUE FAIL"
+        );
+    }
+
+    if (
+        simMutex == NULL
+    )
+    {
+        Serial.println(
+            "SIM MUTEX FAIL"
+        );
+    }
+
+    // =============================================
+    // LOAD RFID
+    // =============================================
+    loadRFIDCards();
+
+    Serial.print(
+        "TOTAL RFID CARD: "
+    );
+
+    Serial.println(
+        totalCards
+    );
+
+    // =============================================
+    // SENSOR TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskSensor,
+        "Sensor Task",
+        4096,
+        NULL,
+        1,
+        NULL,
+        0
+    );
+
+    // =============================================
+    // ALARM TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskAlarm,
+        "Alarm Task",
+        4096,
+        NULL,
+        1,
+        NULL,
+        1
+    );
+
+    // =============================================
+    // RFID TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskRFID,
+        "RFID Task",
+        4096,
+        NULL,
+        1,
+        NULL,
+        1
+    );
+
+    // =============================================
+    // KEYPAD TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskKeypad,
+        "Keypad Task",
+        4096,
+        NULL,
+        1,
+        NULL,
+        1
+    );
+
+    // =============================================
+    // SERVO TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskServo,
+        "Servo Task",
+        4096,
+        NULL,
+        1,
+        NULL,
+        1
+    );
+
+    // =============================================
+    // LCD TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskLCD,
+        "LCD Task",
+        6144,
+        NULL,
+        1,
+        NULL,
+        0
+    );
+
+    // =============================================
+    // SIM TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskSIM,
+        "SIM Task",
+        8192,
+        NULL,
+        1,
+        NULL,
+        0
+    );
+
+    // =============================================
+    // TELEGRAM TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskTelegram,
+        "Telegram Task",
+        8192,
+        NULL,
+        1,
+        NULL,
+        0
+    );
+
+
+    // =============================================
+    // FINGERPRINT TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskFingerprint,
+        "Fingerprint Task",
+        4096,
+        NULL,
+        1,
+        NULL,
+        1
+    );
+
+    // =============================================
+    // GPS TASK
+    // =============================================
+    xTaskCreatePinnedToCore(
+        taskGPS,
+        "GPS Task",
+        4096,
+        NULL,
+        1,
+        NULL,
+        0
+    );
+
+    Serial.println();
+
+    Serial.println(
+        "SYSTEM READY"
+    );
+
+    Serial.println(
+        "WAIT RFID..."
+    );
+
+    Serial.print(
+        "FREE HEAP: "
+    );
+
+    Serial.println(
+        ESP.getFreeHeap()
+    );
+}
+
+
+// =====================================================
+// LOOP
+// =====================================================
+void loop()
+{
+    while (1)
+    {
+        // Kiểm tra xác thực 3 lớp: RFID, vân tay, mật khẩu
+        if (rfidAuthenticated && fingerAuthenticated && authenticated) {
+            // Mở két, reset trạng thái xác thực
+            safeState = SAFE_OPEN;
+            lcdLine1 = "UNLOCKED";
+            lcdLine2 = "SAFE OPEN";
+            lcdMessageTime = millis();
+            buzzerBeep(2000, 100);
+            // Reset trạng thái xác thực để tránh mở lại
+            rfidAuthenticated = false;
+            fingerAuthenticated = false;
+            authenticated = false;
+        }
+        vTaskDelay(200 / portTICK_PERIOD_MS);
+    }
+}src/services/lcd_service.h
+
+===== src/services/lcd_service.h =====
+#pragma once
+
+#include <Arduino.h>
+
+void showLCDMessage(
+    String line1,
+    String line2,
+    int duration = 2000
+);src/services/telegram_service.cpp
+
+===== src/services/telegram_service.cpp =====
+// =====================================================
+// telegram_service.cpp
+// FINAL PRODUCTION VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include "telegram_service.h"
+
+#include "core/globals.h"
+
+
+// =====================================================
+// EXTERN
+// =====================================================
+extern HardwareSerial simSerial;
+
+extern SemaphoreHandle_t
+simMutex;
+
+
+// =====================================================
+// TELEGRAM CONFIG
+// =====================================================
+String BOT_TOKEN =
+"7953174535:AAFPYbaoYEGF67FMCCDKuRdwyi3hX6rMsvk";
+
+String CHAT_ID =
+"8695905240";
+
+
+// =====================================================
+// TELEGRAM TIMER
+// =====================================================
+extern unsigned long
+lastTelegramTime;
+
+
+// =====================================================
+// READ SIM RESPONSE
+// =====================================================
+String readSIMResponse(
+    int timeout
+)
+{
+    String response = "";
+
+    unsigned long start =
+        millis();
+
+    while (
+        millis() - start
+        < timeout
+    )
+    {
+        while (
+            simSerial.available()
+        )
+        {
+            char c =
+                simSerial.read();
+
+            response += c;
+        }
+
+        // IMPORTANT
+        vTaskDelay(
+            10 / portTICK_PERIOD_MS
+        );
+    }
+
+    return response;
+}
+
+
+// =====================================================
+// URL ENCODE
+// =====================================================
+String encodeURL(
+    String text
+)
+{
+    text.replace(
+        " ",
+        "%20"
+    );
+
+    text.replace(
+        "\n",
+        "%0A"
+    );
+
+    text.replace(
+        ":",
+        "%3A"
+    );
+
+    text.replace(
+        "/",
+        "%2F"
+    );
+
+    return text;
+}
+
+
+// =====================================================
+// SEND TELEGRAM
+// =====================================================
+bool sendTelegram(
+    String text
+)
+{
+    // =============================================
+    // ANTI SPAM
+    // =============================================
+    if (
+        millis() - lastTelegramTime
+        < 1000
+    )
+    {
+        Serial.println(
+            "TELEGRAM SKIPPED"
+        );
+
+        return false;
+    }
+
+    // =============================================
+    // TAKE MUTEX
+    // =============================================
+    if (
+        xSemaphoreTake(
+            simMutex,
+            5000 /
+            portTICK_PERIOD_MS
+        ) != pdTRUE
+    )
+    {
+        Serial.println(
+            "SIM MUTEX FAIL"
+        );
+
+        return false;
+    }
+
+    Serial.println();
+
+    Serial.println(
+        "================================="
+    );
+
+    Serial.println(
+        "SEND TELEGRAM START"
+    );
+
+    // =============================================
+    // URL ENCODE
+    // =============================================
+    text =
+        encodeURL(text);
+
+    // =============================================
+    // URL
+    // =============================================
+    String url =
+        "https://api.telegram.org/bot" +
+        BOT_TOKEN +
+        "/sendMessage?chat_id=" +
+        CHAT_ID +
+        "&text=" +
+        text;
+
+    Serial.println();
+
+    Serial.println(url);
+
+    // =============================================
+    // CLEAR BUFFER
+    // =============================================
+    while (
+        simSerial.available()
+    )
+    {
+        simSerial.read();
+    }
+
+    // =============================================
+    // FORCE HTTP CLOSE
+    // =============================================
+    simSerial.println(
+        "AT+HTTPTERM"
+    );
+
+    vTaskDelay(
+        2000 /
+        portTICK_PERIOD_MS
+    );
+
+    readSIMResponse(
+        3000
+    );
+
+    // =============================================
+    // HTTP INIT
+    // =============================================
+    simSerial.println(
+        "AT+HTTPINIT"
+    );
+
+    String response =
+        readSIMResponse(
+            3000
+        );
+
+    Serial.println(
+        response
+    );
+
+    // =============================================
+    // CHECK INIT
+    // =============================================
+    if (
+        response.indexOf("OK")
+        == -1
+    )
+    {
+        Serial.println(
+            "HTTP INIT FAILED"
+        );
+
+        simSerial.println(
+            "AT+HTTPTERM"
+        );
+
+        vTaskDelay(
+            2000 /
+            portTICK_PERIOD_MS
+        );
+
+        readSIMResponse(
+            3000
+        );
+
+        xSemaphoreGive(
+            simMutex
+        );
+
+        return false;
+    }
+
+    // =============================================
+    // SET URL
+    // =============================================
+    simSerial.println(
+        "AT+HTTPPARA=\"URL\",\"" +
+        url +
+        "\""
+    );
+
+    response =
+        readSIMResponse(
+            3000
+        );
+
+    Serial.println(
+        response
+    );
+
+    // =============================================
+    // CHECK URL
+    // =============================================
+    if (
+        response.indexOf("OK")
+        == -1
+    )
+    {
+        Serial.println(
+            "URL SET FAILED"
+        );
+
+        simSerial.println(
+            "AT+HTTPTERM"
+        );
+
+        vTaskDelay(
+            2000 /
+            portTICK_PERIOD_MS
+        );
+
+        readSIMResponse(
+            3000
+        );
+
+        xSemaphoreGive(
+            simMutex
+        );
+
+        return false;
+    }
+
+    // =============================================
+    // HTTP ACTION
+    // =============================================
+    simSerial.println(
+        "AT+HTTPACTION=0"
+    );
+
+    vTaskDelay(
+        500 /
+        portTICK_PERIOD_MS
+    );
+
+    response =
+        readSIMResponse(
+            8000
+        );
+
+    Serial.println(
+        response
+    );
+
+    // =============================================
+    // SUCCESS
+    // =============================================
+    if (
+        response.indexOf(
+            "+HTTPACTION: 0,200"
+        ) != -1
+    )
+    {
+        Serial.println();
+
+        Serial.println(
+            "TELEGRAM SUCCESS"
+        );
+
+        // SAVE TIME
+        lastTelegramTime =
+            millis();
+    }
+    else
+    {
+        Serial.println();
+
+        Serial.println(
+            "TELEGRAM FAILED"
+        );
+    }
+
+    // =============================================
+    // CLOSE HTTP
+    // =============================================
+    simSerial.println(
+        "AT+HTTPTERM"
+    );
+
+    vTaskDelay(
+        2000 /
+        portTICK_PERIOD_MS
+    );
+
+    readSIMResponse(
+        3000
+    );
+
+    Serial.println();
+
+    Serial.println(
+        "SEND TELEGRAM DONE"
+    );
+
+    // =============================================
+    // RELEASE MUTEX
+    // =============================================
+    xSemaphoreGive(
+        simMutex
+    );
+
+    return true;
+}src/services/alert_service.cpp
+
+===== src/services/alert_service.cpp =====
+#include <Arduino.h>
+
+#include "alert_service.h"
+#include "telegram_service.h"
+
+unsigned long lastAlert = 0;
+
+void triggerAlarm(String reason)
+{
+    // ANTI SPAM
+    if (
+        millis() - lastAlert < 15000
+    )
+    {
+        return;
+    }
+
+    lastAlert = millis();
+
+    Serial.println();
+
+    Serial.println(
+        "================================="
+    );
+
+    Serial.println(
+        "TRIGGER ALARM"
+    );
+
+    Serial.println(reason);
+
+    // SEND TELEGRAM
+    sendTelegram(
+        "SAFE ALERT: " + reason
+    );
+}src/services/alert_service.h
+
+===== src/services/alert_service.h =====
+#pragma once
+
+#include <Arduino.h>
+
+void triggerAlarm(String reason);src/services/auth_service.cpp
+
+===== src/services/auth_service.cpp =====
+src/services/gps_service.cpp
+
+===== src/services/gps_service.cpp =====
+src/services/firebase_service.cpp
+
+===== src/services/firebase_service.cpp =====
+src/services/telegram_service.h
+
+===== src/services/telegram_service.h =====
+#pragma once
+
+#include <Arduino.h>
+
+bool sendTelegram(String text);src/services/lcd_service.cpp
+
+===== src/services/lcd_service.cpp =====
+#include <Arduino.h>
+
+#include "lcd_service.h"
+
+#include "core/globals.h"
+#include "core/lcd_message.h"
+
+void showLCD(
+    String line1,
+    String line2,
+    int duration
+)
+{
+    LCDMessage msg;
+
+    line1.toCharArray(
+        msg.line1,
+        17
+    );
+
+    line2.toCharArray(
+        msg.line2,
+        17
+    );
+
+    msg.duration =
+        duration;
+
+    xQueueSend(
+        lcdQueue,
+        &msg,
+        0
+    );
+}include/core/rfid_storage.h
+
+===== include/core/rfid_storage.h =====
+#pragma once
+
+#include <Arduino.h>
+
+void loadRFIDCards();
+
+void saveRFIDCard(String uid);
+
+void deleteRFIDCard(String uid);include/core/auth_service.h
+
+===== include/core/auth_service.h =====
+include/core/queues.h
+
+===== include/core/queues.h =====
+#pragma once
+
+#include <Arduino.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+
+#include "core/events.h"
+
+extern QueueHandle_t systemQueue;include/core/events.h
+
+===== include/core/events.h =====
+#pragma once
+
+typedef enum
+{
+    // =====================================
+    // AUTH
+    // =====================================
+    EVENT_PASSWORD_OK,
+    EVENT_PASSWORD_FAIL,
+
+    EVENT_RFID_OK,
+    EVENT_RFID_FAIL,
+
+    EVENT_FINGER_OK,
+    EVENT_FINGER_FAIL,
+
+    // =====================================
+    // SECURITY
+    // =====================================
+    EVENT_VIBRATION,
+    EVENT_DOOR_OPEN,
+    EVENT_SMOKE,
+
+    EVENT_UNAUTHORIZED,
+
+    // =====================================
+    // SYSTEM
+    // =====================================
+    EVENT_UNLOCK,
+    EVENT_LOCK,
+
+    // =====================================
+    // ALARM
+    // =====================================
+    EVENT_ALARM_ON,
+    EVENT_ALARM_OFF
+
+} EventType;
+
+
+// =========================================
+// SYSTEM EVENT
+// =========================================
+typedef struct
+{
+    EventType type;
+
+    char message[64];
+
+} SystemEvent;include/core/globals.h
+
+===== include/core/globals.h =====
+#include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/event_groups.h>
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
+
+#include "safe_state.h"
+#include "core/states.h"
+#include "core/rfid_modes.h"
+#include "lcd_message.h"
+
+// ================= AUTH FLOW =================
+enum AuthStep {
+  AUTH_STEP_IDLE,
+  AUTH_STEP_RFID_OK,
+  AUTH_STEP_FINGER_OK,
+  AUTH_STEP_PASSWORD_OK,
+  AUTH_STEP_SUCCESS
+};
+
+// ================= QUEUES =================
+extern QueueHandle_t lcdQueue;
+extern QueueHandle_t systemQueue;
+extern QueueHandle_t telegramQueue;
+
+// ================= SYSTEM STATE =================
+extern SystemState currentState;
+extern RFIDMode currentRFIDMode;
+extern SafeState safeState;
+extern SafeState lastTelegramState;
+
+// ================= AUTH VARIABLES =================
+extern AuthStep authStep;
+extern unsigned long authStepTime;
+extern int failedAttempts;
+
+extern bool rfidAuthenticated;
+extern bool fingerAuthenticated;
+extern bool passwordAuthenticated;
+extern bool authenticated;
+extern bool fingerReady;
+extern bool adminMode;
+
+// ================= RFID STORAGE =================
+extern String userCards[20];
+extern int totalCards;
+
+// ================= RTOS =================
+extern EventGroupHandle_t systemEvents;
+extern SemaphoreHandle_t simMutex;
+
+// ================= LCD =================
+extern String lcdLine1;
+extern String lcdLine2;
+extern unsigned long lcdMessageTime;
+
+// ================= TELEGRAM / SIM =================
+extern unsigned long lastTelegramTime;
+
+// ================= GPS =================
+extern double gpsLat;
+extern double gpsLng;
+extern bool gpsValid;include/core/lcd_message.h
+
+===== include/core/lcd_message.h =====
+#pragma once
+
+typedef struct
+{
+    char line1[17];
+
+    char line2[17];
+
+    int duration;
+
+} LCDMessage;include/core/system_bits.h
+
+===== include/core/system_bits.h =====
+// =====================================================
+// system_bits.h
+// =====================================================
+
+#pragma once
+
+#define BIT_AUTH_OK        (1 << 0)
+
+#define BIT_ALARM_ACTIVE   (1 << 1)
+
+#define BIT_DOOR_OPEN      (1 << 2)
+
+#define BIT_ADMIN_MODE     (1 << 3)
+
+#define BIT_FINGER_OK      (1 << 4)
+
+#define BIT_RFID_OK        (1 << 5)include/core/states.h
+
+===== include/core/states.h =====
+#pragma once
+
+typedef enum {
+
+    STATE_LOCKED,
+    STATE_UNLOCKED,
+    STATE_ALARM
+
+} SystemState;include/core/safe_state.h
+
+===== include/core/safe_state.h =====
+#pragma once
+
+enum SafeState
+{
+    SAFE_LOCKED,
+
+    SAFE_UNLOCKING,
+
+    SAFE_OPEN,
+
+    SAFE_ALARM
+};include/core/buzzer.h
+
+===== include/core/buzzer.h =====
+#pragma once
+
+void buzzerBeep(
+    int frequency,
+    int duration
+);include/core/rfid_modes.h
+
+===== include/core/rfid_modes.h =====
+#pragma once
+
+typedef enum {
+
+    RFID_MODE_NORMAL,
+
+    RFID_MODE_ADD,
+
+    RFID_MODE_DELETE
+
+} RFIDMode;include/config/config.h
+
+===== include/config/config.h =====
+include/config/pins.h
+
+===== include/config/pins.h =====
+#pragma once
+
+// =========================
+// RFID RC522 (SPI)
+// =========================
+#define RFID_SS        5
+#define RFID_RST       13
+
+#define SPI_MOSI       23
+#define SPI_MISO       19
+#define SPI_SCK        18
+
+
+// =========================
+// GPS NEO6M (UART1)
+// =========================
+// =========================
+// SIM A7608C (UART2)
+// =========================
+#define SIM_RX         26
+#define SIM_TX         25
+
+
+// =========================
+// Fingerprint AS608
+// =========================
+
+// =========================
+#define GPS_RX         4
+#define GPS_TX         2
+
+
+// =========================
+// Fingerprint AS608
+// =========================
+#define FINGER_RX      16
+#define FINGER_TX      17
+
+
+// =========================
+// TTP229 Keypad
+// =========================
+#define KEYPAD_SCL 22
+#define KEYPAD_SDO 21
+
+
+// =========================
+// LCD I2C
+// =========================
+#define I2C_SDA 32
+#define I2C_SCL 33
+
+
+// =========================
+// Sensors
+// =========================
+
+// SW420
+#define VIBRATION_PIN  35
+
+// MQ2
+#define SMOKE_PIN      34
+
+// Door Sensor
+#define DOOR_PIN       27
+
+
+// =========================
+// Servo
+// =========================
+#define SERVO_PIN      14
+
+
+// =========================
+// Buzzer
+// =========================
+#define BUZZER_PIN     15
