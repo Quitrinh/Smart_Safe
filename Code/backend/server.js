@@ -706,11 +706,9 @@ app.post('/api/auth-methods/check', async (req, res) => {
   }
 });
 
-const pool = require("./db");
-
 app.get("/db-test", async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT DATABASE() db");
+    const [rows] = await db.query("SELECT DATABASE() db");
 
     res.json({
       success: true,
