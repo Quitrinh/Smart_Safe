@@ -705,6 +705,24 @@ app.post('/api/auth-methods/check', async (req, res) => {
     });
   }
 });
+
+const pool = require("./db");
+
+app.get("/db-test", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT DATABASE() db");
+
+    res.json({
+      success: true,
+      database: rows[0].db
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
