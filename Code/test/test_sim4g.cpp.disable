@@ -1,0 +1,100 @@
+
+// #include <Arduino.h>
+
+// HardwareSerial simSerial(1);
+
+// #define SIM_RX 25
+// #define SIM_TX 26
+
+// String phoneNumber = "+84962437855";
+
+// bool waitFor(String key, unsigned long timeout)
+// {
+//     String res = "";
+//     unsigned long start = millis();
+
+//     while (millis() - start < timeout)
+//     {
+//         while (simSerial.available())
+//         {
+//             char c = simSerial.read();
+//             Serial.write(c);
+//             res += c;
+
+//             if (res.indexOf(key) != -1)
+//             {
+//                 return true;
+//             }
+//         }
+//         delay(10);
+//     }
+
+//     return false;
+// }
+
+// void sendAT(String cmd, unsigned long timeout = 3000)
+// {
+//     Serial.println();
+//     Serial.println(">>> " + cmd);
+
+//     simSerial.println(cmd);
+//     waitFor("OK", timeout);
+// }
+
+// bool sendSMS(String phone, String msg)
+// {
+//     Serial.println();
+//     Serial.println("===== SEND SMS =====");
+
+//     sendAT("AT");
+//     sendAT("ATE0");
+//     sendAT("AT+CPIN?");
+//     sendAT("AT+CSQ");
+//     sendAT("AT+CREG?");
+//     sendAT("AT+CMGF=1");
+//     sendAT("AT+CSCS=\"GSM\"");
+
+//     Serial.println();
+//     Serial.println(">>> AT+CMGS");
+
+//     simSerial.print("AT+CMGS=\"");
+//     simSerial.print(phone);
+//     simSerial.println("\"");
+
+//     if (!waitFor(">", 7000))
+//     {
+//         Serial.println();
+//         Serial.println("LOI: Khong thay dau >");
+//         return false;
+//     }
+
+//     simSerial.print(msg);
+//     delay(500);
+//     simSerial.write(26);
+
+//     if (waitFor("OK", 20000))
+//     {
+//         Serial.println();
+//         Serial.println("SMS OK");
+//         return true;
+//     }
+
+//     Serial.println();
+//     Serial.println("SMS FAIL");
+//     return false;
+// }
+
+// void setup()
+// {
+//     Serial.begin(115200);
+//     delay(3000);
+
+//     simSerial.begin(115200, SERIAL_8N1, SIM_RX, SIM_TX);
+//     delay(3000);
+
+//     sendSMS(phoneNumber, "SMART SAFE SMS TEST");
+// }
+
+// void loop()
+// {
+// }

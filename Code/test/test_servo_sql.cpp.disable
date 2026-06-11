@@ -1,0 +1,59 @@
+#include <HardwareSerial.h>
+
+HardwareSerial sim4g(1);
+
+#define SIM_RX 16   // ESP32 RX <- TX SIM4G
+#define SIM_TX 17   // ESP32 TX -> RX SIM4G
+
+String phoneReceive = "+84987654321"; // đổi thành số người nhận
+
+void setup() {
+  Serial.begin(115200);
+  sim4g.begin(115200, SERIAL_8N1, SIM_RX, SIM_TX);
+
+  delay(3000);
+
+  Serial.println("Test gui SMS...");
+
+  sendAT("AT");
+  sendAT("ATE0");
+  sendAT("AT+CPIN?");
+  sendAT("AT+CSQ");
+  sendAT("AT+CREG?");
+  sendAT("AT+CMGF=1");
+
+  sendSMS(phoneReceive, "Test SMS tu module SIM 4G ESP32");
+}
+
+void loop() {
+}
+
+void sendSMS(String phone, String message) {
+  sim4g.println("AT+CMGF=1");
+  delay(1000);
+
+  sim4g.print("AT+CMGS=\"");
+  sim4g.print(phone);
+  sim4g.println("\"");
+  delay(1000);
+
+  sim4g.print(message);
+  delay(500);
+
+  sim4g.write(26); // Ctrl + Z
+  delay(5000);
+
+  readResponse();
+}
+
+void sendAT(String cmd) {
+  sim4g.println(cmd);
+  delay(1000);
+  readResponse();
+}
+
+void readResponse() {
+  while (sim4g.available()) {
+    Serial.write(sim4g.read());
+  }
+}

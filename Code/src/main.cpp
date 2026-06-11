@@ -1,0 +1,205 @@
+// =====================================================
+// main.cpp
+// SMART SAFE - EVENT DRIVEN VERSION
+// =====================================================
+
+#include <Arduino.h>
+
+#include "core/globals.h"
+#include "core/events.h"
+#include "core/rfid_storage.h"
+#include "core/buzzer.h"
+#include "core/led.h"
+#include "core/system_bits.h"
+
+// =====================================================
+// GLOBAL OBJECTS
+// =====================================================
+QueueHandle_t systemQueue;
+QueueHandle_t telegramQueue;
+QueueHandle_t lcdQueue;
+
+SemaphoreHandle_t simMutex;
+EventGroupHandle_t systemEvents;
+
+// =====================================================
+// SYSTEM STATE
+// =====================================================
+SystemState currentState = STATE_LOCKED;
+SafeState safeState = SAFE_LOCKED;
+RFIDMode currentRFIDMode = RFID_MODE_NORMAL;
+
+// =====================================================
+// AUTH STATES
+// =====================================================
+int failedAttempts = 0;
+
+bool authenticated = false;
+bool rfidAuthenticated = false;
+bool fingerAuthenticated = false;
+bool adminMode = false;
+bool fingerReady = false;
+
+// =====================================================
+// GPS GLOBAL
+// =====================================================
+double gpsLat = 0;
+double gpsLng = 0;
+bool gpsValid = false;
+
+// =====================================================
+// LCD GLOBAL
+// =====================================================
+String lcdLine1 = "";
+String lcdLine2 = "";
+unsigned long lcdMessageTime = 0;
+
+// =====================================================
+// TELEGRAM TIMER
+// =====================================================
+unsigned long lastTelegramTime = 0;
+
+// =====================================================
+// RFID STORAGE
+// =====================================================
+String userCards[20];
+int totalCards = 0;
+
+// =====================================================
+// TASK DECLARE
+// =====================================================
+void taskAlarm(void *pv);
+void taskSensor(void *pv);
+void taskKeypad(void *pv);
+void taskServo(void *pv);
+void taskLCD(void *pv);
+void taskLED(void *pv);
+void taskRFID(void *pv);
+void taskSIM(void *pv);
+void taskTelegram(void *pv);
+void taskGPS(void *pv);
+void taskFingerprint(void *pv);
+void taskFlame(void *pv);
+void taskWiFi(void *pv);
+void taskConfigSync(void *pv);
+void taskStatusSync(void *pv);
+void taskBackendCommand(void *pv);
+// void taskBackendAPI(void *pv); // bật lại khi đã tạo file task_backend_api.cpp
+
+// =====================================================
+// CREATE TASK HELPER
+// =====================================================
+void createTask(
+    TaskFunction_t fn,
+    const char *name,
+    uint32_t stack,
+    UBaseType_t priority,
+    BaseType_t core
+) {
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        fn,
+        name,
+        stack,
+        NULL,
+        priority,
+        NULL,
+        core
+    );
+
+    if (ok != pdPASS) {
+        Serial.print("TASK CREATE FAIL: ");
+        Serial.println(name);
+    }
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+void setup()
+{
+    Serial.begin(115200);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    Serial.println();
+    Serial.println("=================================");
+    Serial.println("SMART SAFE SYSTEM START");
+    Serial.println("EVENT DRIVEN VERSION");
+    Serial.println("=================================");
+
+    systemQueue = xQueueCreate(20, sizeof(SystemEvent));
+    telegramQueue = xQueueCreate(20, sizeof(SystemEvent));
+    lcdQueue = xQueueCreate(10, sizeof(LCDMessage));
+    simMutex = xSemaphoreCreateMutex();
+    systemEvents = xEventGroupCreate();
+
+    if (systemQueue == NULL) Serial.println("SYSTEM QUEUE FAIL");
+    if (telegramQueue == NULL) Serial.println("TELEGRAM QUEUE FAIL");
+    if (lcdQueue == NULL) Serial.println("LCD QUEUE FAIL");
+    if (simMutex == NULL) Serial.println("SIM MUTEX FAIL");
+    if (systemEvents == NULL) Serial.println("EVENT GROUP FAIL");
+
+    loadRFIDCards();
+
+    Serial.print("TOTAL RFID CARD: ");
+    Serial.println(totalCards);
+
+    // Priority:
+    // 5 = Auth
+    // 4 = Alarm
+    // 3 = Sensor / Servo
+    // 2 = SIM / Telegram
+    // 1 = GPS / LCD
+    // ======================================
+    // WIFI TRƯỚC TIÊN
+    // ======================================
+    createTask(taskWiFi,        "WiFi",        4096, 4, 0);
+
+    // ======================================
+    // AUTHENTICATION (ƯU TIÊN CAO NHẤT)
+    // ======================================
+    createTask(taskRFID,        "RFID",        4096, 5, 1);
+    createTask(taskFingerprint, "Fingerprint", 4096, 5, 1);
+    createTask(taskKeypad,      "Keypad",      4096, 5, 1);
+
+    // ======================================
+    // ALARM
+    // ======================================
+    createTask(taskAlarm,       "Alarm",       4096, 4, 1);
+
+    // ======================================
+    // SENSOR
+    // ======================================
+    createTask(taskSensor,      "Sensor",      4096, 3, 0);
+    createTask(taskFlame,       "Flame",       4096, 3, 0);
+    createTask(taskServo,       "Servo",       4096, 3, 1);
+
+    // ======================================
+    // NETWORK TASK
+    // ======================================
+    createTask(taskSIM,         "SIM",         8192, 2, 0);
+
+    createTask(taskConfigSync,  "ConfigSync",  8192, 2, 0);
+    createTask(taskStatusSync,  "StatusSync",  8192, 2, 0);
+    createTask(taskBackendCommand, "BackendCmd", 8192, 2, 0);
+
+    // ======================================
+    // UI + GPS
+    // ======================================
+    createTask(taskGPS,         "GPS",         4096, 1, 0);
+    createTask(taskLCD,         "LCD",         6144, 1, 0);
+    createTask(taskLED,         "LED",         2048, 1, 0);
+
+    Serial.println();
+    Serial.println("SYSTEM READY");
+    Serial.println("WAIT RFID...");
+    Serial.print("FREE HEAP: ");
+    Serial.println(ESP.getFreeHeap());
+}
+
+// =====================================================
+// LOOP
+// =====================================================
+void loop()
+{
+    vTaskDelay(pdMS_TO_TICKS(1000));
+}
