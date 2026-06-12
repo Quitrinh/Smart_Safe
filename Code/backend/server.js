@@ -578,7 +578,7 @@ app.get("/api/auth-methods", async (req, res) => {
 });
 
 // ===============================
-// CREATE ENROLL COMMAND
+// TẠO AUTH METHOD (ADD / ENROLL)
 // ===============================
 app.post("/api/auth-methods/enroll", async (req, res) => {
   try {
@@ -591,18 +591,14 @@ app.post("/api/auth-methods/enroll", async (req, res) => {
       });
     }
 
-    const command =
-      method_type === "RFID" ? "ADD_RFID" : "ADD_FINGER";
+    const command = method_type === "RFID" ? "ADD_RFID" : "ADD_FINGER";
 
     await db.query(
       `INSERT INTO safe_commands(command, command_value, status)
        VALUES (?, ?, 'pending')`,
       [
         command,
-        JSON.stringify({
-          user_name,
-          method_type
-        })
+        JSON.stringify({ user_name, method_type })
       ]
     );
 
@@ -616,35 +612,36 @@ app.post("/api/auth-methods/enroll", async (req, res) => {
 });
 
 // ===============================
-// ESP32 BAO ENROLL THANH CONG
+// ESP32 GỬI KẾT QUẢ ENROLL
 // ===============================
 app.post("/api/auth-methods/enroll-result", async (req, res) => {
   try {
     const { user_name, method_type, method_value, command_id } = req.body;
+
+    // Kiểm tra đã tồn tại chưa (chỉ tính active)
     const [exists] = await db.query(
-    `
-    SELECT id,user_name
-    FROM auth_methods
-    WHERE method_type=?
-    AND method_value=?
-    AND status='active'
-    LIMIT 1
-    `,
-    [method_type, method_value]
+      `SELECT id, user_name
+       FROM auth_methods
+       WHERE method_type = ? AND method_value = ? AND status = 'active'
+       LIMIT 1`,
+      [method_type, method_value]
     );
 
     if (exists.length > 0) {
       return res.status(409).json({
-          success:false,
-          message:`Already assigned to ${exists[0].user_name}`
+        success: false,
+        message: `Đã được gán cho ${exists[0].user_name}`
       });
     }
+
+    // Thêm auth method mới
     await db.query(
       `INSERT INTO auth_methods(user_name, method_type, method_value, status)
        VALUES (?, ?, ?, 'active')`,
       [user_name, method_type, method_value]
     );
 
+    // Cập nhật trạng thái lệnh nếu có
     if (command_id) {
       await db.query(
         "UPDATE safe_commands SET status = 'done' WHERE id = ?",
@@ -657,13 +654,14 @@ app.post("/api/auth-methods/enroll-result", async (req, res) => {
       message: "Auth method saved"
     });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post('/api/auth-methods/check', async (req, res) => {
+
+// ===============================
+// KIỂM TRA AUTH METHOD
+// ===============================
+app.post("/api/auth-methods/check", async (req, res) => {
   try {
     const { method_type, method_value } = req.body;
 
@@ -675,14 +673,10 @@ app.post('/api/auth-methods/check', async (req, res) => {
     }
 
     const [rows] = await db.query(
-      `
-      SELECT *
-      FROM auth_methods
-      WHERE method_type = ?
-      AND method_value = ?
-      AND status = 'active'
-      LIMIT 1
-      `,
+      `SELECT *
+       FROM auth_methods
+       WHERE method_type = ? AND method_value = ? AND status = 'active'
+       LIMIT 1`,
       [method_type, method_value]
     );
 
@@ -706,22 +700,9 @@ app.post('/api/auth-methods/check', async (req, res) => {
   }
 });
 
-app.get("/db-test", async (req, res) => {
-  try {
-    const [rows] = await db.query("SELECT DATABASE() db");
-
-    res.json({
-      success: true,
-      database: rows[0].db
-    });
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message
-    });
-  }
-});
-// POST /api/auth-methods/remove
+// ===============================
+// XÓA AUTH METHOD
+// ===============================
 app.post("/api/auth-methods/remove", async (req, res) => {
   try {
     const { method_type, method_value } = req.body;
@@ -733,10 +714,12 @@ app.post("/api/auth-methods/remove", async (req, res) => {
       });
     }
 
-    // Kiểm tra auth method tồn tại
+    // Kiểm tra auth method tồn tại và đang active
     const [rows] = await db.query(
-      `SELECT * FROM auth_methods
-       WHERE method_type = ? AND method_value = ? AND status = 'active' LIMIT 1`,
+      `SELECT id
+       FROM auth_methods
+       WHERE method_type = ? AND method_value = ? AND status = 'active'
+       LIMIT 1`,
       [method_type, method_value]
     );
 
