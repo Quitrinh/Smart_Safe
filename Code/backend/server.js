@@ -769,7 +769,7 @@ app.post("/api/events/remove", async (req, res) => {
     // Xóa các sự kiện
     const placeholders = ids.map(() => "?").join(", ");
     const sql = `UPDATE events SET status='deleted', updated_at=NOW() WHERE id IN (${placeholders})`;
-    await db.query(sql, ids);
+    await db.query("DELETE FROM events WHERE id IN (?)", [ids]);
 
     res.json({
       success: true,
