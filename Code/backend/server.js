@@ -746,6 +746,54 @@ app.post("/api/auth-methods/remove", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+// POST /api/events/remove
+app.post("/api/events/remove", async (req, res) => {
+  try {
+    const { ids } = req.body; // ids là mảng số nguyên
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing or empty ids array",
+      });
+    }
+
+    // Kiểm tra xem tất cả id là số
+    if (!ids.every(id => Number.isInteger(id))) {
+      return res.status(400).json({
+        success: false,
+        message: "All ids must be integers",
+      });
+    }
+
+    // Xóa các sự kiện
+    const placeholders = ids.map(() => "?").join(", ");
+    const sql = `UPDATE events SET status='deleted', updated_at=NOW() WHERE id IN (${placeholders})`;
+    await db.query(sql, ids);
+
+    res.json({
+      success: true,
+      message: `Deleted ${ids.length} events successfully`,
+    });
+  } catch (err) {
+    console.error("[REMOVE EVENTS ERROR]", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Optional: Remove all events
+app.post("/api/events/remove-all", async (req, res) => {
+  try {
+    await db.query("UPDATE events SET status='deleted', updated_at=NOW() WHERE status='active'");
+    res.json({
+      success: true,
+      message: "All active events have been deleted",
+    });
+  } catch (err) {
+    console.error("[REMOVE ALL EVENTS ERROR]", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
