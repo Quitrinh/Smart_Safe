@@ -721,7 +721,48 @@ app.get("/db-test", async (req, res) => {
     });
   }
 });
+// POST /api/auth-methods/remove
+app.post("/api/auth-methods/remove", async (req, res) => {
+  try {
+    const { method_type, method_value } = req.body;
 
+    if (!method_type || !method_value) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing method_type or method_value"
+      });
+    }
+
+    // Kiểm tra auth method tồn tại
+    const [rows] = await db.query(
+      `SELECT * FROM auth_methods
+       WHERE method_type = ? AND method_value = ? AND status = 'active' LIMIT 1`,
+      [method_type, method_value]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Auth method not found"
+      });
+    }
+
+    // Xóa bằng cách đổi status = 'deleted'
+    await db.query(
+      `UPDATE auth_methods
+       SET status='deleted', updated_at=NOW()
+       WHERE id = ?`,
+      [rows[0].id]
+    );
+
+    res.json({
+      success: true,
+      message: `${method_type} removed successfully`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
