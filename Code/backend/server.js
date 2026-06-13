@@ -794,6 +794,13 @@ app.post("/api/events/restore", async (req, res) => {
   try {
     const { ids } = req.body;
 
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing ids",
+      });
+    }
+
     await db.query(
       "UPDATE events SET status='active' WHERE id IN (?)",
       [ids]
@@ -801,7 +808,7 @@ app.post("/api/events/restore", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Events restored",
+      message: `Restored ${ids.length} events`,
     });
 
   } catch (err) {
