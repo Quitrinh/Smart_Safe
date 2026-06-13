@@ -7,7 +7,7 @@
 #include "core/globals.h"
 #include "core/events.h"
 
-String commandBackendUrl = "http://192.168.1.6:3000";
+String commandBackendUrl = "https://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
 
 extern String lcdLine1;
 extern String lcdLine2;

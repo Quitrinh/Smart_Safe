@@ -22,7 +22,7 @@ HardwareSerial simSerial(1);
 // =====================================================
 // BACKEND
 // =====================================================
-String eventBackendUrl = "http://192.168.1.6:3000";
+String eventBackendUrl = "http://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
 
 // =====================================================
 // SMS PHONE LIST

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
-const String baseUrl = "http://192.168.1.6:3000";
+const String baseUrl = "https://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
 
 void main() {
   runApp(const SmartSafeApp());

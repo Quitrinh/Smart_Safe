@@ -749,7 +749,7 @@ app.post("/api/auth-methods/remove", async (req, res) => {
 // POST /api/events/remove
 app.post("/api/events/remove", async (req, res) => {
   try {
-    const { ids } = req.body; // ids là mảng số nguyên
+    const { ids } = req.body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({
@@ -758,26 +758,27 @@ app.post("/api/events/remove", async (req, res) => {
       });
     }
 
-    // Kiểm tra xem tất cả id là số
-    if (!ids.every(id => Number.isInteger(id))) {
-      return res.status(400).json({
-        success: false,
-        message: "All ids must be integers",
-      });
-    }
+    // ép kiểu an toàn
+    const cleanIds = ids.map(id => Number(id));
 
-    // Xóa các sự kiện
-    const placeholders = ids.map(() => "?").join(", ");
-    const sql = `UPDATE events SET status='deleted', updated_at=NOW() WHERE id IN (${placeholders})`;
-    await db.query("DELETE FROM events WHERE id IN (?)", [ids]);
+    await db.query(
+      `UPDATE events 
+       SET status='deleted', updated_at=NOW() 
+       WHERE id IN (?)`,
+      [cleanIds]
+    );
 
-    res.json({
+    return res.json({
       success: true,
-      message: `Deleted ${ids.length} events successfully`,
+      message: `Deleted ${cleanIds.length} events successfully`,
     });
+
   } catch (err) {
     console.error("[REMOVE EVENTS ERROR]", err);
-    res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 });
 

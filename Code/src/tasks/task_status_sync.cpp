@@ -5,7 +5,7 @@
 #include "core/system_bits.h"
 #include "core/globals.h"
 
-String statusBackendUrl = "http://192.168.1.6:3000";
+String statusBackendUrl = "http://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
 
 void taskStatusSync(void *pv)
 {

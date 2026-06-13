@@ -5,7 +5,7 @@
 
 #include "core/globals.h"
 
-String backendUrl = "http://192.168.1.6:3000";
+String backendUrl = "http://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
 
 extern String correctPassword;
 
