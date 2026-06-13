@@ -235,8 +235,8 @@ app.post("/api/events", async (req, res) => {
     const { event_type, message, gps_lat, gps_lng, network_type } = req.body;
 
     await db.query(
-      `INSERT INTO events(event_type, message, gps_lat, gps_lng, network_type)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO events(event_type, message, gps_lat, gps_lng, network_type, status)
+       VALUES (?, ?, ?, ?, ?, 'active')`,
       [
         event_type || "UNKNOWN",
         message || "",
@@ -250,6 +250,7 @@ app.post("/api/events", async (req, res) => {
       success: true,
       message: "Event saved",
     });
+
   } catch (err) {
     res.status(500).json({
       success: false,
@@ -257,7 +258,6 @@ app.post("/api/events", async (req, res) => {
     });
   }
 });
-
 // ===============================
 // APP LAY LICH SU EVENT
 // GET /api/events
