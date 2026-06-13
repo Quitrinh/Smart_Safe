@@ -754,30 +754,24 @@ app.post("/api/events/remove", async (req, res) => {
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Missing or empty ids array",
+        message: "Missing ids",
       });
     }
 
-    // ép kiểu an toàn
-    const cleanIds = ids.map(id => Number(id));
-
     await db.query(
-      `UPDATE events 
-       SET status='deleted', updated_at=NOW() 
-       WHERE id IN (?)`,
-      [cleanIds]
+      "UPDATE events SET status='deleted' WHERE id IN (?)",
+      [ids]
     );
 
-    return res.json({
+    res.json({
       success: true,
-      message: `Deleted ${cleanIds.length} events successfully`,
+      message: `Deleted ${ids.length} events`,
     });
 
   } catch (err) {
-    console.error("[REMOVE EVENTS ERROR]", err);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
-      message: err.message,
+      error: err.message,
     });
   }
 });
@@ -795,6 +789,29 @@ app.post("/api/events/remove-all", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+app.post("/api/events/restore", async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    await db.query(
+      "UPDATE events SET status='active' WHERE id IN (?)",
+      [ids]
+    );
+
+    res.json({
+      success: true,
+      message: "Events restored",
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
 // ===============================
 // START SERVER
 // ===============================
