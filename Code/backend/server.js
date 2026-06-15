@@ -3,13 +3,54 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
-
+const twilio = require("twilio");
+const admin = require("firebase-admin");
 const db = require("./db");
 
+// Twilio setup
+const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
+
+// Firebase Admin setup
+const serviceAccount = require("./firebase-service-account.json"); // tải file JSON Firebase
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// ===============================
+// Gửi SMS
+// ===============================
+async function sendSMS(to, message) {
+  try {
+    await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE,
+      to,
+    });
+    console.log("SMS sent to", to);
+  } catch (err) {
+    console.error("SMS error:", err);
+  }
+}
+
+// ===============================
+// Gửi Push Notification
+// ===============================
+async function sendPushNotification(deviceToken, title, body) {
+  try {
+    const message = {
+      notification: { title, body },
+      token: deviceToken,
+    };
+    await admin.messaging().send(message);
+    console.log("Push notification sent to", deviceToken);
+  } catch (err) {
+    console.error("Push notification error:", err);
+  }
+}
 
 const PORT = process.env.PORT || 3000;
 // ===============================
@@ -938,37 +979,49 @@ async function sendSMS(to, message) {
   }
 }
 // ===============================
-// Request OTP (Forgot Password)
+// POST /api/request-otp
+// body: { phone_number: "0901234567" }
 // ===============================
 app.post("/api/request-otp", async (req, res) => {
   try {
     const { phone_number } = req.body;
-    if (!phone_number) return res.status(400).json({ success: false, message: "Missing phone number" });
+    if (!phone_number)
+      return res.status(400).json({ success: false, message: "Missing phone number" });
 
-    const [users] = await db.query("SELECT * FROM users WHERE phone_number = ?", [phone_number]);
+    // Lấy user
+    const [users] = await db.query("SELECT * FROM users WHERE phone = ?", [phone_number]);
     if (users.length === 0) return res.status(404).json({ success: false, message: "User not found" });
     const user = users[0];
 
+    // Sinh OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiredAt = new Date(Date.now() + 5 * 60 * 1000); // 5 phút
-    await sendSMS(phone_number, `OTP cua ban la: ${otpCode}. Hieu luc 5 phut.`);
+
+    // Lưu OTP vào DB
     await db.query(
-      "INSERT INTO otp_codes(user_id, otp_code, purpose, expired_at, used) VALUES (?, ?, 'RESET_PASSWORD', ?, 0)",
+      `INSERT INTO otp_codes(user_id, otp_code, purpose, expired_at, used)
+       VALUES (?, ?, 'RESET_PASSWORD', ?, 0)`,
       [user.id, otpCode, expiredAt]
     );
 
-    // TODO: Send OTP via SMS or Notification
-    console.log(`OTP for ${phone_number}: ${otpCode}`);
+    // Gửi SMS
+    await sendSMS(phone_number, `Smart Safe OTP của bạn: ${otpCode}. Hết hạn sau 5 phút.`);
+
+    // Gửi Push notification nếu có device_token
+    if (user.device_token) {
+      await sendPushNotification(user.device_token, "OTP Smart Safe", `OTP của bạn: ${otpCode}`);
+    }
 
     res.json({ success: true, message: "OTP sent successfully" });
   } catch (err) {
-    console.error(err);
+    console.error("[REQUEST OTP ERROR]", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // ===============================
-// Verify OTP & Reset Password
+// POST /api/verify-otp
+// body: { phone_number: "0901234567", otp: "123456", new_password: "abc123" }
 // ===============================
 app.post("/api/verify-otp", async (req, res) => {
   try {
@@ -976,24 +1029,32 @@ app.post("/api/verify-otp", async (req, res) => {
     if (!phone_number || !otp || !new_password)
       return res.status(400).json({ success: false, message: "Missing params" });
 
-    const [users] = await db.query("SELECT * FROM users WHERE phone_number = ?", [phone_number]);
+    const [users] = await db.query("SELECT * FROM users WHERE phone = ?", [phone_number]);
     if (users.length === 0) return res.status(404).json({ success: false, message: "User not found" });
     const user = users[0];
 
     const [rows] = await db.query(
-      `SELECT * FROM otp_codes WHERE user_id = ? AND otp_code = ? AND purpose='RESET_PASSWORD' AND used=0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1`,
+      `SELECT * FROM otp_codes
+       WHERE user_id = ? AND otp_code = ? AND purpose='RESET_PASSWORD' AND used=0 AND expired_at > NOW()
+       ORDER BY id DESC LIMIT 1`,
       [user.id, otp]
     );
 
-    if (rows.length === 0) return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    if (rows.length === 0)
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
 
     const hashedPassword = await bcrypt.hash(new_password, 10);
     await db.query("UPDATE users SET password_hash = ? WHERE id = ?", [hashedPassword, user.id]);
     await db.query("UPDATE otp_codes SET used = 1 WHERE id = ?", [rows[0].id]);
 
+    // Thông báo push khi đổi mật khẩu thành công
+    if (user.device_token) {
+      await sendPushNotification(user.device_token, "Smart Safe", "Mật khẩu của bạn đã được cập nhật thành công.");
+    }
+
     res.json({ success: true, message: "Password updated successfully" });
   } catch (err) {
-    console.error(err);
+    console.error("[VERIFY OTP ERROR]", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
