@@ -777,11 +777,7 @@ app.post("/api/events/remove", async (req, res) => {
         message: "Missing ids",
       });
     }
-    const placeholders = ids.map(() => "?").join(", ");
-    await db.query(
-      `UPDATE events SET status='deleted' WHERE id IN (${placeholders})`,
-      ids
-    );
+
     await db.query(
       "UPDATE events SET status='deleted' WHERE id IN (?)",
       [ids]
