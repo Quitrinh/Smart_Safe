@@ -792,30 +792,20 @@ app.post("/api/events/remove-all", async (req, res) => {
 
 app.post("/api/events/restore", async (req, res) => {
   try {
-    const { ids } = req.body;
+    const { ids } = req.body; // ids = [44, 45, 46]
 
     if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing ids",
-      });
+      return res.status(400).json({ success: false, message: "Missing ids" });
     }
 
-    await db.query(
-      "UPDATE events SET status='active' WHERE id IN (?)",
-      [ids]
-    );
+    await db.query("UPDATE events SET status='active' WHERE id IN (?)", [ids]);
 
     res.json({
       success: true,
       message: `Restored ${ids.length} events`,
     });
-
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
