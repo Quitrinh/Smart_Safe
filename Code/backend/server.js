@@ -294,7 +294,7 @@ app.post("/api/events", async (req, res) => {
 app.get("/api/events", async (req, res) => {
   try {
     const { status } = req.query; // 'active' hoặc 'deleted'
-    let sql = "SELECT * FROM events WHERE status='active' ORDER BY id DESC LIMIT 200";
+    let sql = "SELECT * FROM events";
     const params = [];
 
     if (status) {
