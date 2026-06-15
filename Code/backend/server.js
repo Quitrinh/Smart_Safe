@@ -265,20 +265,25 @@ app.post("/api/events", async (req, res) => {
 // ===============================
 app.get("/api/events", async (req, res) => {
   try {
-    const { date, status } = req.query; // thêm status
+    const { date, status } = req.query;
 
-    let sql = "SELECT * FROM events";
+    let sql = `
+      SELECT id, event_type, message, gps_lat, gps_lng, network_type, status,
+             CONVERT_TZ(created_at, '+00:00', '+07:00') AS created_at
+      FROM events
+    `;
     const params = [];
 
     if (status) {
       sql += " WHERE status = ?";
       params.push(status);
     } else {
-      sql += " WHERE status = 'active'"; // default
+      sql += " WHERE status = 'active'";
     }
 
     if (date) {
-      sql += " AND DATE(created_at) = ?";
+      sql += status ? " AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?" 
+                    : " AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?";
       params.push(date);
     }
 
@@ -297,7 +302,6 @@ app.get("/api/events", async (req, res) => {
     });
   }
 });
-
 // ===============================
 // SMS RECEIVERS
 // ===============================
