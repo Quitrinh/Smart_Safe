@@ -265,13 +265,16 @@ app.post("/api/events", async (req, res) => {
 // ===============================
 app.get("/api/events", async (req, res) => {
   try {
-    const { status, date } = req.query;
-    let sql = "SELECT * FROM events WHERE 1=1";
+    const { date, status } = req.query; // thêm status
+
+    let sql = "SELECT * FROM events";
     const params = [];
 
     if (status) {
-      sql += " AND status = ?";
+      sql += " WHERE status = ?";
       params.push(status);
+    } else {
+      sql += " WHERE status = 'active'"; // default
     }
 
     if (date) {
@@ -288,7 +291,10 @@ app.get("/api/events", async (req, res) => {
       data: rows,
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 
