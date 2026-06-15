@@ -263,34 +263,54 @@ app.post("/api/events", async (req, res) => {
 // GET /api/events
 // GET /api/events?date=2026-06-05
 // ===============================
+// app.get("/api/events", async (req, res) => {
+//   try {
+//     const { date } = req.query;
+
+//     let sql = "SELECT * FROM events WHERE status = 'active'";
+//     const params = [];
+
+//     if (date) {
+//       sql += " AND DATE(created_at) = ?";
+//       params.push(date);
+//     }
+
+//     sql += " ORDER BY created_at DESC LIMIT 200";
+
+//     const [rows] = await db.query(sql, params);
+
+//     res.json({
+//       success: true,
+//       data: rows,
+//     });
+//   } catch (err) {
+//     res.status(500).json({
+//       success: false,
+//       error: err.message,
+//     });
+//   }
+// });
+// GET /api/events?status=deleted
 app.get("/api/events", async (req, res) => {
   try {
-    const { date } = req.query;
-
-    let sql = "SELECT * FROM events WHERE status = 'active'";
+    const { status } = req.query; // 'active' hoặc 'deleted'
+    let sql = "SELECT * FROM events";
     const params = [];
 
-    if (date) {
-      sql += " AND DATE(created_at) = ?";
-      params.push(date);
+    if (status) {
+      sql += " WHERE status = ?";
+      params.push(status);
     }
 
     sql += " ORDER BY created_at DESC LIMIT 200";
 
     const [rows] = await db.query(sql, params);
 
-    res.json({
-      success: true,
-      data: rows,
-    });
+    res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
-
 // ===============================
 // SMS RECEIVERS
 // ===============================
