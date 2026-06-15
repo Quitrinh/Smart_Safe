@@ -294,7 +294,7 @@ app.post("/api/events", async (req, res) => {
 app.get("/api/events", async (req, res) => {
   try {
     const { status } = req.query; // 'active' hoặc 'deleted'
-    let sql = "SELECT * FROM events";
+    let sql = "SELECT * FROM events WHERE status='active' ORDER BY id DESC LIMIT 200";
     const params = [];
 
     if (status) {
@@ -777,7 +777,11 @@ app.post("/api/events/remove", async (req, res) => {
         message: "Missing ids",
       });
     }
-
+    const placeholders = ids.map(() => "?").join(", ");
+    await db.query(
+      `UPDATE events SET status='deleted' WHERE id IN (${placeholders})`,
+      ids
+    );
     await db.query(
       "UPDATE events SET status='deleted' WHERE id IN (?)",
       [ids]
