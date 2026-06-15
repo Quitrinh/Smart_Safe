@@ -267,15 +267,15 @@ app.get("/api/events", async (req, res) => {
   try {
     const { date } = req.query;
 
-    let sql = "SELECT * FROM events";
+    let sql = "SELECT * FROM events WHERE status = 'active'";
     const params = [];
 
     if (date) {
-      sql += " WHERE DATE(created_at) = ?";
+      sql += " AND DATE(created_at) = ?";
       params.push(date);
     }
 
-    sql += " ORDER BY id DESC LIMIT 200";
+    sql += " ORDER BY created_at DESC LIMIT 200";
 
     const [rows] = await db.query(sql, params);
 
