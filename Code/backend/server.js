@@ -798,13 +798,19 @@ app.post("/api/events/restore", async (req, res) => {
       return res.status(400).json({ success: false, message: "Missing ids" });
     }
 
-    await db.query("UPDATE events SET status='active' WHERE id IN (?)", [ids]);
+    // Tạo placeholders để expand từng id
+    const placeholders = ids.map(() => "?").join(", ");
+    await db.query(
+      `UPDATE events SET status='active' WHERE id IN (${placeholders})`,
+      ids
+    );
 
     res.json({
       success: true,
       message: `Restored ${ids.length} events`,
     });
   } catch (err) {
+    console.error("[RESTORE EVENTS ERROR]", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
