@@ -12,6 +12,78 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || "smart_safe_secret_key";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+
+function createOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function isValidPassword(password) {
+  return typeof password === "string" && password.length >= 6;
+}
+
+function signToken(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+}
+
+async function authRequired(req, res, next) {
+  try {
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Missing token",
+      });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const [rows] = await db.query(
+      `SELECT id, full_name, username, email, phone, role, status
+       FROM users
+       WHERE id = ? AND status = 'active'
+       LIMIT 1`,
+      [decoded.id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "User khong hop le hoac da bi khoa",
+      });
+    }
+
+    req.user = rows[0];
+    next();
+  } catch (err) {
+    return res.status(401).json({
+      success: false,
+      message: "Token khong hop le hoac da het han",
+    });
+  }
+}
+
+function adminRequired(req, res, next) {
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Chi admin moi co quyen thuc hien",
+    });
+  }
+
+  next();
+}
 
 // ===============================
 // TEST API
