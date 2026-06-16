@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 require("dotenv").config();
 
 const db = require("./db");
-
+const firebaseAdmin = require("./firebase-admin");
 const app = express();
 
 app.use(cors());
@@ -258,6 +258,92 @@ async function createNotificationForAdmins(title, body, type = "ALARM", ref_id =
     await createNotification(admin.id, title, body, type, ref_id);
   }
 }
+async function sendPushToUser(userId, title, body, type = "SYSTEM", refId = null) {
+  try {
+    if (!firebaseAdmin) {
+      console.log("[FCM] Firebase Admin not initialized");
+      return;
+    }
+
+    const [tokens] = await db.query(
+      `SELECT device_token
+       FROM device_tokens
+       WHERE user_id = ?
+       AND status = 'active'`,
+      [userId]
+    );
+
+    if (tokens.length === 0) {
+      console.log(`[FCM] No active token for user ${userId}`);
+      return;
+    }
+
+    const tokenList = tokens.map((t) => t.device_token);
+
+    const response = await firebaseAdmin.messaging().sendEachForMulticast({
+      tokens: tokenList,
+      notification: {
+        title,
+        body,
+      },
+      data: {
+        type: String(type || "SYSTEM"),
+        ref_id: refId ? String(refId) : "",
+      },
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "smart_safe_alerts",
+          sound: "default",
+        },
+      },
+    });
+
+    console.log(
+      `[FCM] Sent to user ${userId}: success=${response.successCount}, failed=${response.failureCount}`
+    );
+
+    for (let i = 0; i < response.responses.length; i++) {
+      const r = response.responses[i];
+
+      if (!r.success) {
+        const errorCode = r.error?.code || "";
+        console.log("[FCM TOKEN ERROR]", errorCode);
+
+        if (
+          errorCode.includes("registration-token-not-registered") ||
+          errorCode.includes("invalid-registration-token")
+        ) {
+          await db.query(
+            `UPDATE device_tokens
+             SET status = 'inactive'
+             WHERE device_token = ?`,
+            [tokenList[i]]
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[FCM SEND USER ERROR]", err.message);
+  }
+}
+
+async function sendPushToAdmins(title, body, type = "ALARM", refId = null) {
+  try {
+    const [admins] = await db.query(
+      `SELECT id
+       FROM users
+       WHERE role = 'admin'
+       AND status = 'active'`
+    );
+
+    for (const admin of admins) {
+      await sendPushToUser(admin.id, title, body, type, refId);
+    }
+  } catch (err) {
+    console.error("[FCM SEND ADMINS ERROR]", err.message);
+  }
+}
 // ===============================
 // ESP32 GUI EVENT LEN SERVER
 // ===============================
@@ -293,15 +379,29 @@ app.post("/api/events", async (req, res) => {
     ];
 
     if (alarmTypes.includes(finalEventType)) {
+      const title = "Cảnh báo két thông minh";
+      const body = finalMessage || `Phát hiện sự kiện bất thường: ${finalEventType}`;
+
       try {
         await createNotificationForAdmins(
-          "Cảnh báo két thông minh",
-          finalMessage || `Phát hiện sự kiện bất thường: ${finalEventType}`,
+          title,
+          body,
           finalEventType,
           result.insertId
         );
       } catch (notifyErr) {
         console.error("[NOTIFICATION ERROR]", notifyErr.message);
+      }
+
+      try {
+        await sendPushToAdmins(
+          title,
+          body,
+          finalEventType,
+          result.insertId
+        );
+      } catch (pushErr) {
+        console.error("[PUSH ERROR]", pushErr.message);
       }
     }
 
