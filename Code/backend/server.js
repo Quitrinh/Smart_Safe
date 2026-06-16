@@ -826,25 +826,6 @@ app.post("/api/events/restore", async (req, res) => {
   }
 });
 
-const axios = require("axios");
-
-async function sendPushNotification(fcmToken, title, body) {
-  const serverKey = process.env.FIREBASE_SERVER_KEY; // Lấy từ Firebase Console
-  await axios.post(
-    "https://fcm.googleapis.com/fcm/send",
-    {
-      to: fcmToken,
-      notification: { title, body },
-      data: { key: "value" },
-    },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `key=${serverKey}`,
-      },
-    }
-  );
-}
 // ===============================
 // START SERVER
 // ===============================
