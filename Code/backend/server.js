@@ -3,16 +3,56 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
-
+const twilio = require("twilio");
+const admin = require("firebase-admin");
 const db = require("./db");
 
+// Twilio setup
+const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
+
+// Firebase Admin setup
+const serviceAccount = require("./firebase-service-account.json"); // tải file JSON Firebase
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+// ===============================
+// Gửi SMS
+// ===============================
+async function sendSMS(to, message) {
+  try {
+    await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE,
+      to,
+    });
+    console.log("SMS sent to", to);
+  } catch (err) {
+    console.error("SMS error:", err);
+  }
+}
 
+// ===============================
+// Gửi Push Notification
+// ===============================
+async function sendPushNotification(deviceToken, title, body) {
+  try {
+    const message = {
+      notification: { title, body },
+      token: deviceToken,
+    };
+    await admin.messaging().send(message);
+    console.log("Push notification sent to", deviceToken);
+  } catch (err) {
+    console.error("Push notification error:", err);
+  }
+}
+
+const PORT = process.env.PORT || 3000;
 // ===============================
 // TEST API
 // ===============================
@@ -263,45 +303,45 @@ app.post("/api/events", async (req, res) => {
 // GET /api/events
 // GET /api/events?date=2026-06-05
 // ===============================
-app.get("/api/events", async (req, res) => {
-  try {
-    const { date, status } = req.query;
+// app.get("/api/events", async (req, res) => {
+//   try {
+//     const { date, status } = req.query;
 
-    let sql = `
-      SELECT id, event_type, message, gps_lat, gps_lng, network_type, status,
-             CONVERT_TZ(created_at, '+00:00', '+07:00') AS created_at
-      FROM events
-    `;
-    const params = [];
+//     let sql = `
+//       SELECT id, event_type, message, gps_lat, gps_lng, network_type, status,
+//              CONVERT_TZ(created_at, '+00:00', '+07:00') AS created_at
+//       FROM events
+//     `;
+//     const params = [];
 
-    if (status) {
-      sql += " WHERE status = ?";
-      params.push(status);
-    } else {
-      sql += " WHERE status = 'active'";
-    }
+//     if (status) {
+//       sql += " WHERE status = ?";
+//       params.push(status);
+//     } else {
+//       sql += " WHERE status = 'active'";
+//     }
 
-    if (date) {
-      sql += status ? " AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?" 
-                    : " AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?";
-      params.push(date);
-    }
+//     if (date) {
+//       sql += status ? " AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?" 
+//                     : " AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?";
+//       params.push(date);
+//     }
 
-    sql += " ORDER BY created_at DESC LIMIT 200";
+//     sql += " ORDER BY created_at DESC LIMIT 200";
 
-    const [rows] = await db.query(sql, params);
+//     const [rows] = await db.query(sql, params);
 
-    res.json({
-      success: true,
-      data: rows,
-    });
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
-  }
-});
+//     res.json({
+//       success: true,
+//       data: rows,
+//     });
+//   } catch (err) {
+//     res.status(500).json({
+//       success: false,
+//       error: err.message,
+//     });
+//   }
+// });
 // ===============================
 // SMS RECEIVERS
 // ===============================
@@ -757,69 +797,323 @@ app.post("/api/auth-methods/remove", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-// POST /api/events/remove
-app.post("/api/events/remove", async (req, res) => {
-  try {
-    const { ids } = req.body;
+// // POST /api/events/remove
+// app.post("/api/events/remove", async (req, res) => {
+//   try {
+//     const { ids } = req.body;
 
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing ids",
-      });
-    }
+//     if (!Array.isArray(ids) || ids.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Missing ids",
+//       });
+//     }
+
+//     await db.query(
+//       "UPDATE events SET status='deleted' WHERE id IN (?)",
+//       [ids]
+//     );
+
+//     res.json({
+//       success: true,
+//       message: `Deleted ${ids.length} events`,
+//     });
+
+//   } catch (err) {
+//     res.status(500).json({
+//       success: false,
+//       error: err.message,
+//     });
+//   }
+// });
+
+// // Optional: Remove all events
+// app.post("/api/events/remove-all", async (req, res) => {
+//   try {
+//     await db.query("UPDATE events SET status='deleted', updated_at=NOW() WHERE status='active'");
+//     res.json({
+//       success: true,
+//       message: "All active events have been deleted",
+//     });
+//   } catch (err) {
+//     console.error("[REMOVE ALL EVENTS ERROR]", err);
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+
+// app.post("/api/events/restore", async (req, res) => {
+//   try {
+//     const { ids } = req.body; // ids = [44, 45, 46]
+
+//     if (!Array.isArray(ids) || ids.length === 0) {
+//       return res.status(400).json({ success: false, message: "Missing ids" });
+//     }
+
+//     // Tạo placeholders để expand từng id
+//     const placeholders = ids.map(() => "?").join(", ");
+//     await db.query(
+//       `UPDATE events SET status='active' WHERE id IN (${placeholders})`,
+//       ids
+//     );
+
+//     res.json({
+//       success: true,
+//       message: `Restored ${ids.length} events`,
+//     });
+//   } catch (err) {
+//     console.error("[RESTORE EVENTS ERROR]", err);
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+
+// ===============================
+// Middleware: Auth & Role
+// ===============================
+function authToken(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ success: false, message: "Missing token" });
+
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET || "smart_safe_secret");
+    next();
+  } catch (err) {
+    return res.status(401).json({ success: false, message: "Invalid token" });
+  }
+}
+
+function authRole(role) {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    if (req.user.role !== role) return res.status(403).json({ success: false, message: "Forbidden" });
+    next();
+  };
+}
+// ===============================
+// TEST API
+// ===============================
+app.get("/", (req, res) => res.json({ success: true, message: "SMART SAFE API OK" }));
+
+// ===============================
+// Register User
+// ===============================
+app.post("/api/users/register", async (req, res) => {
+  try {
+    const { phone_number, username, password } = req.body;
+    if (!phone_number || !password)
+      return res.status(400).json({ success: false, message: "Missing phone or password" });
+
+    const password_hash = await bcrypt.hash(password, 10);
 
     await db.query(
-      "UPDATE events SET status='deleted' WHERE id IN (?)",
-      [ids]
+      "INSERT INTO users(phone_number, username, password_hash, is_active) VALUES (?, ?, ?, 0)",
+      [phone_number, username || null, password_hash]
     );
 
-    res.json({
-      success: true,
-      message: `Deleted ${ids.length} events`,
-    });
-
+    res.json({ success: true, message: "Đăng ký thành công, chờ admin duyệt" });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
-  }
-});
-
-// Optional: Remove all events
-app.post("/api/events/remove-all", async (req, res) => {
-  try {
-    await db.query("UPDATE events SET status='deleted', updated_at=NOW() WHERE status='active'");
-    res.json({
-      success: true,
-      message: "All active events have been deleted",
-    });
-  } catch (err) {
-    console.error("[REMOVE ALL EVENTS ERROR]", err);
+    console.error(err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.post("/api/events/restore", async (req, res) => {
+// ===============================
+// Activate/Deactivate User (Admin Only)
+// ===============================
+app.post("/api/users/activate", authToken, authRole("admin"), async (req, res) => {
   try {
-    const { ids } = req.body; // ids = [44, 45, 46]
+    const { user_id, activate } = req.body;
+    if (!user_id) return res.status(400).json({ success: false, message: "Missing user_id" });
 
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, message: "Missing ids" });
-    }
+    await db.query("UPDATE users SET is_active = ? WHERE id = ?", [activate ? 1 : 0, user_id]);
+    res.json({ success: true, message: activate ? "User activated" : "User deactivated" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
-    // Tạo placeholders để expand từng id
-    const placeholders = ids.map(() => "?").join(", ");
-    await db.query(
-      `UPDATE events SET status='active' WHERE id IN (${placeholders})`,
-      ids
+// ===============================
+// Login User
+// ===============================
+app.post("/api/users/login", async (req, res) => {
+  try {
+    const { phone_number, password } = req.body;
+    if (!phone_number || !password)
+      return res.status(400).json({ success: false, message: "Missing phone or password" });
+
+    const [rows] = await db.query("SELECT * FROM users WHERE phone_number = ? LIMIT 1", [phone_number]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: "User not found" });
+
+    const user = rows[0];
+    if (!user.is_active) return res.status(403).json({ success: false, message: "User not active" });
+
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ success: false, message: "Incorrect password" });
+
+    const token = jwt.sign(
+      { id: user.id, phone_number: user.phone_number, role: user.role },
+      process.env.JWT_SECRET || "smart_safe_secret",
+      { expiresIn: "7d" }
     );
 
-    res.json({
-      success: true,
-      message: `Restored ${ids.length} events`,
+    res.json({ success: true, message: "Login successful", token, role: user.role });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+const twilio = require("twilio");
+const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
+
+async function sendSMS(to, message) {
+  try {
+    await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE, // số Twilio
+      to, // số người nhận
     });
+    console.log("SMS sent to", to);
+  } catch (err) {
+    console.error("SMS error:", err);
+  }
+}
+// ===============================
+// POST /api/request-otp
+// body: { phone_number: "0901234567" }
+// ===============================
+app.post("/api/request-otp", async (req, res) => {
+  try {
+    const { phone_number } = req.body;
+    if (!phone_number)
+      return res.status(400).json({ success: false, message: "Missing phone number" });
+
+    // Lấy user
+    const [users] = await db.query("SELECT * FROM users WHERE phone = ?", [phone_number]);
+    if (users.length === 0) return res.status(404).json({ success: false, message: "User not found" });
+    const user = users[0];
+
+    // Sinh OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiredAt = new Date(Date.now() + 5 * 60 * 1000); // 5 phút
+
+    // Lưu OTP vào DB
+    await db.query(
+      `INSERT INTO otp_codes(user_id, otp_code, purpose, expired_at, used)
+       VALUES (?, ?, 'RESET_PASSWORD', ?, 0)`,
+      [user.id, otpCode, expiredAt]
+    );
+
+    // Gửi SMS
+    await sendSMS(phone_number, `Smart Safe OTP của bạn: ${otpCode}. Hết hạn sau 5 phút.`);
+
+    // Gửi Push notification nếu có device_token
+    if (user.device_token) {
+      await sendPushNotification(user.device_token, "OTP Smart Safe", `OTP của bạn: ${otpCode}`);
+    }
+
+    res.json({ success: true, message: "OTP sent successfully" });
+  } catch (err) {
+    console.error("[REQUEST OTP ERROR]", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ===============================
+// POST /api/verify-otp
+// body: { phone_number: "0901234567", otp: "123456", new_password: "abc123" }
+// ===============================
+app.post("/api/verify-otp", async (req, res) => {
+  try {
+    const { phone_number, otp, new_password } = req.body;
+    if (!phone_number || !otp || !new_password)
+      return res.status(400).json({ success: false, message: "Missing params" });
+
+    const [users] = await db.query("SELECT * FROM users WHERE phone = ?", [phone_number]);
+    if (users.length === 0) return res.status(404).json({ success: false, message: "User not found" });
+    const user = users[0];
+
+    const [rows] = await db.query(
+      `SELECT * FROM otp_codes
+       WHERE user_id = ? AND otp_code = ? AND purpose='RESET_PASSWORD' AND used=0 AND expired_at > NOW()
+       ORDER BY id DESC LIMIT 1`,
+      [user.id, otp]
+    );
+
+    if (rows.length === 0)
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+    await db.query("UPDATE users SET password_hash = ? WHERE id = ?", [hashedPassword, user.id]);
+    await db.query("UPDATE otp_codes SET used = 1 WHERE id = ?", [rows[0].id]);
+
+    // Thông báo push khi đổi mật khẩu thành công
+    if (user.device_token) {
+      await sendPushNotification(user.device_token, "Smart Safe", "Mật khẩu của bạn đã được cập nhật thành công.");
+    }
+
+    res.json({ success: true, message: "Password updated successfully" });
+  } catch (err) {
+    console.error("[VERIFY OTP ERROR]", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ===============================
+// Event APIs (CRUD + Restore)
+// ===============================
+app.get("/api/events", authToken, async (req, res) => {
+  try {
+    const { date, status } = req.query;
+    let sql = "SELECT id, event_type, message, gps_lat, gps_lng, network_type, status, CONVERT_TZ(created_at, '+00:00', '+07:00') AS created_at FROM events";
+    const params = [];
+    if (status) {
+      sql += " WHERE status = ?";
+      params.push(status);
+    } else {
+      sql += " WHERE status = 'active'";
+    }
+    if (date) {
+      sql += status ? " AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?" : " AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?";
+      params.push(date);
+    }
+    sql += " ORDER BY created_at DESC LIMIT 200";
+    const [rows] = await db.query(sql, params);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Xoá events
+app.post("/api/events/remove", authToken, authRole("admin"), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.status(400).json({ success: false, message: "Missing ids" });
+
+    const placeholders = ids.map(() => "?").join(", ");
+    await db.query(`UPDATE events SET status='deleted' WHERE id IN (${placeholders})`, ids);
+
+    res.json({ success: true, message: `Deleted ${ids.length} events` });
+  } catch (err) {
+    console.error("[REMOVE EVENTS ERROR]", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Restore events
+app.post("/api/events/restore", authToken, authRole("admin"), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.status(400).json({ success: false, message: "Missing ids" });
+
+    const placeholders = ids.map(() => "?").join(", ");
+    await db.query(`UPDATE events SET status='active' WHERE id IN (${placeholders})`, ids);
+
+    res.json({ success: true, message: `Restored ${ids.length} events` });
   } catch (err) {
     console.error("[RESTORE EVENTS ERROR]", err);
     res.status(500).json({ success: false, error: err.message });
