@@ -3,19 +3,22 @@ const admin = require("firebase-admin");
 let firebaseAdmin = null;
 
 try {
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+  const encoded = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+
+  if (!encoded) {
     console.log("[FCM] Missing FIREBASE_SERVICE_ACCOUNT_BASE64. FCM disabled.");
   } else {
     const serviceAccount = JSON.parse(
-      Buffer.from(
-        process.env.FIREBASE_SERVICE_ACCOUNT_BASE64,
-        "base64"
-      ).toString("utf8")
+      Buffer.from(encoded, "base64").toString("utf8")
     );
 
-    firebaseAdmin = admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+    }
+
+    firebaseAdmin = admin;
 
     console.log("[FCM] Firebase Admin initialized");
   }
