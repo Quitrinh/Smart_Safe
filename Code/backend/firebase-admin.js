@@ -1,4 +1,5 @@
-const admin = require("firebase-admin");
+const { initializeApp, getApps, cert } = require("firebase-admin/app");
+const { getMessaging } = require("firebase-admin/messaging");
 
 let firebaseAdmin = null;
 
@@ -12,13 +13,15 @@ try {
       Buffer.from(encoded, "base64").toString("utf8")
     );
 
-    if (!admin.apps.length) {
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
+    if (getApps().length === 0) {
+      initializeApp({
+        credential: cert(serviceAccount),
       });
     }
 
-    firebaseAdmin = admin;
+    firebaseAdmin = {
+      messaging: () => getMessaging(),
+    };
 
     console.log("[FCM] Firebase Admin initialized");
   }
