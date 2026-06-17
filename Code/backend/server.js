@@ -1873,6 +1873,31 @@ app.get("/db-test", async (req, res) => {
     });
   }
 });
+app.post("/api/test-push", authRequired, async (req, res) => {
+  try {
+    const title = req.body.title || "Smart Safe";
+    const body = req.body.body || "Test thông báo từ backend";
+
+    await sendPushToUser(
+      req.user.id,
+      title,
+      body,
+      "TEST_PUSH",
+      null
+    );
+
+    res.json({
+      success: true,
+      message: "Test push sent",
+    });
+  } catch (err) {
+    console.error("[TEST PUSH ERROR]", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
