@@ -279,7 +279,6 @@ async function sendPushToUser(userId, title, body, type = "SYSTEM", refId = null
     }
 
     const tokenList = tokens.map((t) => t.device_token);
-
     const response = await firebaseAdmin.messaging().sendEachForMulticast({
       tokens: tokenList,
       notification: {
