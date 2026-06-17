@@ -366,44 +366,51 @@ app.post("/api/events", async (req, res) => {
       ]
     );
 
-    const alarmTypes = [
-      "INTRUSION",
-      "VIBRATION",
-      "DOOR_OPEN",
-      "GAS_ALERT",
-      "SMOKE_ALERT",
-      "FIRE_ALERT",
-      "UNLOCK_FAILED",
-      "WRONG_PASSWORD",
-      "SAFE_MOVED",
-    ];
+const alarmKeywords = [
+  "INTRUSION",
+  "VIBRATION",
+  "DOOR",
+  "GAS",
+  "SMOKE",
+  "FIRE",
+  "FLAME",
+  "UNLOCK_FAILED",
+  "WRONG_PASSWORD",
+  "SAFE_MOVED",
+  "ALARM",
+];
 
-    if (alarmTypes.includes(finalEventType)) {
-      const title = "Cảnh báo két thông minh";
-      const body = finalMessage || `Phát hiện sự kiện bất thường: ${finalEventType}`;
+const isAlarmEvent = alarmKeywords.some((key) =>
+  finalEventType.includes(key)
+);
 
-      try {
-        await createNotificationForAdmins(
-          title,
-          body,
-          finalEventType,
-          result.insertId
-        );
-      } catch (notifyErr) {
-        console.error("[NOTIFICATION ERROR]", notifyErr.message);
-      }
+if (isAlarmEvent) {
+  const title = "Cảnh báo két thông minh";
+  const body =
+    finalMessage || `Phát hiện sự kiện bất thường: ${finalEventType}`;
 
-      try {
-        await sendPushToAdmins(
-          title,
-          body,
-          finalEventType,
-          result.insertId
-        );
-      } catch (pushErr) {
-        console.error("[PUSH ERROR]", pushErr.message);
-      }
-    }
+  try {
+    await createNotificationForAdmins(
+      title,
+      body,
+      finalEventType,
+      result.insertId
+    );
+  } catch (notifyErr) {
+    console.error("[NOTIFICATION ERROR]", notifyErr.message);
+  }
+
+  try {
+    await sendPushToAdmins(
+      title,
+      body,
+      finalEventType,
+      result.insertId
+    );
+  } catch (pushErr) {
+    console.error("[PUSH ERROR]", pushErr.message);
+  }
+}
 
     res.json({
       success: true,
