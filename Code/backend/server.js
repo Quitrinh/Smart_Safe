@@ -52,6 +52,9 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
 
   return R * c;
 }
+
+let lastSafeMovedAlertAt = 0;
+const SAFE_MOVED_COOLDOWN_MS = 5 * 60 * 1000;
 async function authRequired(req, res, next) {
   try {
     const header = req.headers.authorization || "";
@@ -1947,7 +1950,9 @@ app.post("/api/esp32/gps", async (req, res) => {
 
     await db.query(
       `UPDATE safe_status
-       SET gps_lat = ?, gps_lng = ?, gps_updated_at = CURRENT_TIMESTAMP
+       SET gps_lat = ?,
+           gps_lng = ?,
+           gps_updated_at = CURRENT_TIMESTAMP
        WHERE id = 1`,
       [gpsLat, gpsLng]
     );
@@ -1955,69 +1960,116 @@ app.post("/api/esp32/gps", async (req, res) => {
     const [configs] = await db.query(
       `SELECT *
        FROM safe_location_config
-       WHERE id = 1 AND enabled = 1`
+       WHERE id = 1
+       AND enabled = 1`
     );
 
-    if (configs.length > 0) {
-      const config = configs[0];
+    if (configs.length === 0) {
+      return res.json({
+        success: true,
+        moved: false,
+        message: "GPS updated, base location not set",
+        data: {
+          gps_lat: gpsLat,
+          gps_lng: gpsLng,
+        },
+      });
+    }
 
-      if (config.base_lat && config.base_lng) {
-        const distance = distanceMeters(
-          Number(config.base_lat),
-          Number(config.base_lng),
-          gpsLat,
-          gpsLng
+    const config = configs[0];
+
+    if (!config.base_lat || !config.base_lng) {
+      return res.json({
+        success: true,
+        moved: false,
+        message: "GPS updated, base location empty",
+        data: {
+          gps_lat: gpsLat,
+          gps_lng: gpsLng,
+        },
+      });
+    }
+
+    const distance = distanceMeters(
+      Number(config.base_lat),
+      Number(config.base_lng),
+      gpsLat,
+      gpsLng
+    );
+
+    const allowedRadius = Number(config.allowed_radius_m || 50);
+
+    console.log("[GPS] Current:", gpsLat, gpsLng);
+    console.log("[GPS] Base:", config.base_lat, config.base_lng);
+    console.log("[GPS] Distance:", distance);
+
+    if (distance > allowedRadius) {
+      const now = Date.now();
+
+      if (now - lastSafeMovedAlertAt > SAFE_MOVED_COOLDOWN_MS) {
+        lastSafeMovedAlertAt = now;
+
+        const message = `Phat hien ket bi di chuyen. Khoang cach: ${Math.round(
+          distance
+        )}m`;
+
+        const [eventResult] = await db.query(
+          `INSERT INTO events(event_type, message, network_type, status, gps_lat, gps_lng, distance_m)
+           VALUES ('SAFE_MOVED', ?, 'GPS', 'active', ?, ?, ?)`,
+          [message, gpsLat, gpsLng, distance]
         );
 
-        console.log("[GPS] Distance from base:", distance);
-
-        if (distance > Number(config.allowed_radius_m || 50)) {
-          const message = `Phat hien ket bi di chuyen. Khoang cach: ${Math.round(
-            distance
-          )}m`;
-
-          const [eventResult] = await db.query(
-            `INSERT INTO events(event_type, message, network_type, status, gps_lat, gps_lng, distance_m)
-             VALUES ('SAFE_MOVED', ?, 'GPS', 'active', ?, ?, ?)`,
-            [message, gpsLat, gpsLng, distance]
-          );
-
-          try {
+        try {
+          if (typeof createNotificationForAdmins === "function") {
             await createNotificationForAdmins(
               "Cảnh báo két bị di chuyển",
               message,
               "SAFE_MOVED",
               eventResult.insertId
             );
-          } catch (notifyErr) {
-            console.error("[GPS NOTIFICATION ERROR]", notifyErr.message);
           }
+        } catch (notifyErr) {
+          console.error("[GPS NOTIFICATION ERROR]", notifyErr.message);
+        }
 
-          try {
+        try {
+          if (typeof sendPushToAdmins === "function") {
             await sendPushToAdmins(
               "Cảnh báo két bị di chuyển",
               message,
               "SAFE_MOVED",
               eventResult.insertId
             );
-          } catch (pushErr) {
-            console.error("[GPS PUSH ERROR]", pushErr.message);
           }
-
-          return res.json({
-            success: true,
-            moved: true,
-            distance_m: Math.round(distance),
-            message: "Safe moved alert created",
-          });
+        } catch (pushErr) {
+          console.error("[GPS PUSH ERROR]", pushErr.message);
         }
+
+        return res.json({
+          success: true,
+          moved: true,
+          distance_m: Math.round(distance),
+          allowed_radius_m: allowedRadius,
+          message: "Safe moved alert created",
+        });
       }
+
+      return res.json({
+        success: true,
+        moved: true,
+        cooldown: true,
+        distance_m: Math.round(distance),
+        allowed_radius_m: allowedRadius,
+        message: "Safe moved but alert cooldown active",
+      });
     }
 
     res.json({
       success: true,
       moved: false,
-      message: "GPS updated",
+      distance_m: Math.round(distance),
+      allowed_radius_m: allowedRadius,
+      message: "GPS updated, safe location normal",
     });
   } catch (err) {
     console.error("[ESP32 GPS ERROR]", err);
@@ -2031,7 +2083,7 @@ app.post("/api/esp32/gps", async (req, res) => {
 app.post("/api/admin/location/set-current", authRequired, adminRequired, async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT gps_lat, gps_lng
+      `SELECT gps_lat, gps_lng, gps_updated_at
        FROM safe_status
        WHERE id = 1`
     );
@@ -2070,11 +2122,12 @@ app.post("/api/admin/location/set-current", authRequired, adminRequired, async (
 
     res.json({
       success: true,
-      message: "Da dat vi tri hien tai lam vi tri chuan",
+      message: "Da dat vi tri hien tai cua ket lam vi tri chuan",
       data: {
         base_lat: gpsLat,
         base_lng: gpsLng,
         allowed_radius_m: 50,
+        gps_updated_at: rows[0].gps_updated_at,
       },
     });
   } catch (err) {
@@ -2094,9 +2147,18 @@ app.get("/api/admin/location/config", authRequired, adminRequired, async (req, r
        WHERE id = 1`
     );
 
+    const [statusRows] = await db.query(
+      `SELECT gps_lat, gps_lng, gps_updated_at
+       FROM safe_status
+       WHERE id = 1`
+    );
+
     res.json({
       success: true,
-      data: rows[0] || null,
+      data: {
+        config: rows[0] || null,
+        current_gps: statusRows[0] || null,
+      },
     });
   } catch (err) {
     res.status(500).json({
