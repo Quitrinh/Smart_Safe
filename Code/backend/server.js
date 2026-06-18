@@ -1596,7 +1596,26 @@ app.delete("/api/device-tokens", authRequired, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+app.patch("/api/device-tokens/disable-all", authRequired, async (req, res) => {
+  try {
+    await db.query(
+      `UPDATE device_tokens
+       SET status = 'inactive'
+       WHERE user_id = ?`,
+      [req.user.id]
+    );
 
+    res.json({
+      success: true,
+      message: "Da tat thong bao dien thoai",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ===============================
 // NOTIFICATIONS - APP LAY THONG BAO
 // ===============================
