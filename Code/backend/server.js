@@ -2112,6 +2112,38 @@ app.get("/api/esp32/ping", (req, res) => {
     time: new Date().toISOString(),
   });
 });
+app.post("/api/esp32/command-done", async (req, res) => {
+  try {
+    const { id, status } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing command id",
+      });
+    }
+
+    await db.query(
+      `UPDATE safe_commands
+       SET status = ?,
+           executed_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [status || "done", id]
+    );
+
+    res.json({
+      success: true,
+      message: "Command marked as done",
+    });
+  } catch (err) {
+    console.error("[COMMAND DONE ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
