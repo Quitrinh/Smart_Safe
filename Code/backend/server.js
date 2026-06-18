@@ -2105,6 +2105,13 @@ app.get("/api/admin/location/config", authRequired, adminRequired, async (req, r
     });
   }
 });
+app.get("/api/esp32/ping", (req, res) => {
+  res.json({
+    success: true,
+    message: "ESP32 connected to backend",
+    time: new Date().toISOString(),
+  });
+});
 // ===============================
 // START SERVER
 // ===============================
