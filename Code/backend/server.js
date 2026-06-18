@@ -34,7 +34,24 @@ function signToken(user) {
     { expiresIn: JWT_EXPIRES_IN }
   );
 }
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (deg) => (deg * Math.PI) / 180;
 
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
 async function authRequired(req, res, next) {
   try {
     const header = req.headers.authorization || "";
@@ -1910,6 +1927,178 @@ app.post("/api/test-push", authRequired, async (req, res) => {
     });
   } catch (err) {
     console.error("[TEST PUSH ERROR]", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.post("/api/esp32/gps", async (req, res) => {
+  try {
+    const gpsLat = Number(req.body.gps_lat);
+    const gpsLng = Number(req.body.gps_lng);
+
+    if (!gpsLat || !gpsLng) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing gps_lat or gps_lng",
+      });
+    }
+
+    await db.query(
+      `UPDATE safe_status
+       SET gps_lat = ?, gps_lng = ?, gps_updated_at = CURRENT_TIMESTAMP
+       WHERE id = 1`,
+      [gpsLat, gpsLng]
+    );
+
+    const [configs] = await db.query(
+      `SELECT *
+       FROM safe_location_config
+       WHERE id = 1 AND enabled = 1`
+    );
+
+    if (configs.length > 0) {
+      const config = configs[0];
+
+      if (config.base_lat && config.base_lng) {
+        const distance = distanceMeters(
+          Number(config.base_lat),
+          Number(config.base_lng),
+          gpsLat,
+          gpsLng
+        );
+
+        console.log("[GPS] Distance from base:", distance);
+
+        if (distance > Number(config.allowed_radius_m || 50)) {
+          const message = `Phat hien ket bi di chuyen. Khoang cach: ${Math.round(
+            distance
+          )}m`;
+
+          const [eventResult] = await db.query(
+            `INSERT INTO events(event_type, message, network_type, status, gps_lat, gps_lng, distance_m)
+             VALUES ('SAFE_MOVED', ?, 'GPS', 'active', ?, ?, ?)`,
+            [message, gpsLat, gpsLng, distance]
+          );
+
+          try {
+            await createNotificationForAdmins(
+              "Cảnh báo két bị di chuyển",
+              message,
+              "SAFE_MOVED",
+              eventResult.insertId
+            );
+          } catch (notifyErr) {
+            console.error("[GPS NOTIFICATION ERROR]", notifyErr.message);
+          }
+
+          try {
+            await sendPushToAdmins(
+              "Cảnh báo két bị di chuyển",
+              message,
+              "SAFE_MOVED",
+              eventResult.insertId
+            );
+          } catch (pushErr) {
+            console.error("[GPS PUSH ERROR]", pushErr.message);
+          }
+
+          return res.json({
+            success: true,
+            moved: true,
+            distance_m: Math.round(distance),
+            message: "Safe moved alert created",
+          });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      moved: false,
+      message: "GPS updated",
+    });
+  } catch (err) {
+    console.error("[ESP32 GPS ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.post("/api/admin/location/set-current", authRequired, adminRequired, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT gps_lat, gps_lng
+       FROM safe_status
+       WHERE id = 1`
+    );
+
+    if (rows.length === 0 || !rows[0].gps_lat || !rows[0].gps_lng) {
+      return res.status(400).json({
+        success: false,
+        message: "Chua co du lieu GPS hien tai cua ket",
+      });
+    }
+
+    const gpsLat = rows[0].gps_lat;
+    const gpsLng = rows[0].gps_lng;
+
+    await db.query(
+      `INSERT INTO safe_location_config(id, base_lat, base_lng, allowed_radius_m, enabled, updated_by)
+       VALUES (1, ?, ?, 50, 1, ?)
+       ON DUPLICATE KEY UPDATE
+       base_lat = VALUES(base_lat),
+       base_lng = VALUES(base_lng),
+       enabled = 1,
+       updated_by = VALUES(updated_by),
+       updated_at = CURRENT_TIMESTAMP`,
+      [gpsLat, gpsLng, req.user.id]
+    );
+
+    await db.query(
+      `INSERT INTO events(event_type, message, network_type, status, gps_lat, gps_lng)
+       VALUES ('SET_BASE_LOCATION', ?, 'APP', 'active', ?, ?)`,
+      [
+        `Admin ${req.user.username} da dat vi tri hien tai lam vi tri chuan`,
+        gpsLat,
+        gpsLng,
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: "Da dat vi tri hien tai lam vi tri chuan",
+      data: {
+        base_lat: gpsLat,
+        base_lng: gpsLng,
+        allowed_radius_m: 50,
+      },
+    });
+  } catch (err) {
+    console.error("[SET CURRENT LOCATION ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.get("/api/admin/location/config", authRequired, adminRequired, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT *
+       FROM safe_location_config
+       WHERE id = 1`
+    );
+
+    res.json({
+      success: true,
+      data: rows[0] || null,
+    });
+  } catch (err) {
     res.status(500).json({
       success: false,
       error: err.message,
