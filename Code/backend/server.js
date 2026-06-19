@@ -1592,60 +1592,104 @@ app.delete("/api/users/:id", authRequired, adminRequired, async (req, res) => {
   }
 });
 
-// ===============================
-// DEVICE TOKEN - APP DANG KY THIET BI
-// ===============================
-app.post("/api/device-tokens", authRequired, async (req, res) => {
+// // ===============================
+// // DEVICE TOKEN - APP DANG KY THIET BI
+// // ===============================
+// app.post("/api/device-tokens", authRequired, async (req, res) => {
+//   try {
+//     const { device_token, platform } = req.body;
+
+//     if (!device_token) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Missing device_token",
+//       });
+//     }
+
+//     await db.query(
+//       `INSERT INTO device_tokens(user_id, device_token, platform, status, last_seen_at)
+//        VALUES (?, ?, ?, 'active', NOW())
+//        ON DUPLICATE KEY UPDATE
+//        user_id = VALUES(user_id),
+//        platform = VALUES(platform),
+//        status = 'active',
+//        last_seen_at = NOW()`,
+//       [req.user.id, device_token, platform || "android"]
+//     );
+
+//     res.json({
+//       success: true,
+//       message: "Device token saved",
+//     });
+//   } catch (err) {
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+
+// // ===============================
+// // DEVICE TOKEN - HUY DANG KY THIET BI
+// // ===============================
+// app.delete("/api/device-tokens", authRequired, async (req, res) => {
+//   try {
+//     const { device_token } = req.body;
+
+//     await db.query(
+//       `UPDATE device_tokens
+//        SET status = 'inactive'
+//        WHERE user_id = ? AND device_token = ?`,
+//       [req.user.id, device_token]
+//     );
+
+//     res.json({
+//       success: true,
+//       message: "Device token disabled",
+//     });
+//   } catch (err) {
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+// app.patch("/api/device-tokens/disable-all", authRequired, async (req, res) => {
+//   try {
+//     await db.query(
+//       `UPDATE device_tokens
+//        SET status = 'inactive'
+//        WHERE user_id = ?`,
+//       [req.user.id]
+//     );
+
+//     res.json({
+//       success: true,
+//       message: "Da tat thong bao dien thoai",
+//     });
+//   } catch (err) {
+//     res.status(500).json({
+//       success: false,
+//       error: err.message,
+//     });
+//   }
+// });
+app.get("/api/device-tokens/status", authRequired, async (req, res) => {
   try {
-    const { device_token, platform } = req.body;
-
-    if (!device_token) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing device_token",
-      });
-    }
-
-    await db.query(
-      `INSERT INTO device_tokens(user_id, device_token, platform, status, last_seen_at)
-       VALUES (?, ?, ?, 'active', NOW())
-       ON DUPLICATE KEY UPDATE
-       user_id = VALUES(user_id),
-       platform = VALUES(platform),
-       status = 'active',
-       last_seen_at = NOW()`,
-      [req.user.id, device_token, platform || "android"]
+    const [rows] = await db.query(
+      `SELECT COUNT(*) AS active_count
+       FROM device_tokens
+       WHERE user_id = ?
+       AND status = 'active'`,
+      [req.user.id]
     );
+
+    const enabled = Number(rows[0].active_count) > 0;
 
     res.json({
       success: true,
-      message: "Device token saved",
+      enabled,
+      active_count: Number(rows[0].active_count),
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ===============================
-// DEVICE TOKEN - HUY DANG KY THIET BI
-// ===============================
-app.delete("/api/device-tokens", authRequired, async (req, res) => {
-  try {
-    const { device_token } = req.body;
-
-    await db.query(
-      `UPDATE device_tokens
-       SET status = 'inactive'
-       WHERE user_id = ? AND device_token = ?`,
-      [req.user.id, device_token]
-    );
-
-    res.json({
-      success: true,
-      message: "Device token disabled",
+    res.status(500).json({
+      success: false,
+      error: err.message,
     });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
   }
 });
 app.patch("/api/device-tokens/disable-all", authRequired, async (req, res) => {
@@ -1660,6 +1704,39 @@ app.patch("/api/device-tokens/disable-all", authRequired, async (req, res) => {
     res.json({
       success: true,
       message: "Da tat thong bao dien thoai",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.post("/api/device-tokens", authRequired, async (req, res) => {
+  try {
+    const { device_token, platform } = req.body;
+
+    if (!device_token) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing device_token",
+      });
+    }
+
+    await db.query(
+      `INSERT INTO device_tokens(user_id, device_token, platform, status, last_seen_at)
+       VALUES (?, ?, ?, 'active', CURRENT_TIMESTAMP)
+       ON DUPLICATE KEY UPDATE
+       user_id = VALUES(user_id),
+       platform = VALUES(platform),
+       status = 'active',
+       last_seen_at = CURRENT_TIMESTAMP`,
+      [req.user.id, device_token, platform || "android"]
+    );
+
+    res.json({
+      success: true,
+      message: "Device token saved",
     });
   } catch (err) {
     res.status(500).json({
