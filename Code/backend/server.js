@@ -2342,61 +2342,171 @@ app.get("/api/admin/wifi-config", authRequired, adminRequired, async (req, res) 
     });
   }
 });
-app.post("/api/admin/wifi-config", authRequired, adminRequired, async (req, res) => {
+// =====================================================
+// SYSTEM CONFIG HELPERS
+// =====================================================
+async function getSystemConfig(keys = []) {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    const [rows] = await db.query(
+      `SELECT config_key, config_value, updated_at
+       FROM system_config`
+    );
+
+    const config = {};
+
+    rows.forEach((row) => {
+      config[row.config_key] = row.config_value;
+    });
+
+    return config;
+  }
+
+  const placeholders = keys.map(() => "?").join(",");
+
+  const [rows] = await db.query(
+    `SELECT config_key, config_value, updated_at
+     FROM system_config
+     WHERE config_key IN (${placeholders})`,
+    keys
+  );
+
+  const config = {};
+
+  rows.forEach((row) => {
+    config[row.config_key] = row.config_value;
+  });
+
+  return config;
+}
+
+async function setSystemConfig(key, value) {
+  await db.query(
+    `INSERT INTO system_config(config_key, config_value)
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE
+     config_value = VALUES(config_value),
+     updated_at = CURRENT_TIMESTAMP`,
+    [key, value]
+  );
+}
+
+// =====================================================
+// OPTIONAL ESP32 CONFIG GUARD
+// Nếu muốn bảo vệ API ESP32 config thì set ENV:
+// ESP32_CONFIG_KEY=your_secret_key
+// ESP32 gọi kèm header: x-esp32-key
+// Nếu không set ENV thì API vẫn cho ESP32 gọi bình thường.
+// =====================================================
+function esp32ConfigGuard(req, res, next) {
+  const requiredKey = process.env.ESP32_CONFIG_KEY;
+
+  if (!requiredKey) {
+    return next();
+  }
+
+  const inputKey = req.headers["x-esp32-key"] || req.query.key;
+
+  if (inputKey !== requiredKey) {
+    return res.status(401).json({
+      success: false,
+      message: "ESP32 config key invalid",
+    });
+  }
+
+  next();
+}
+
+// =====================================================
+// ADMIN - GET WIFI CONFIG
+// App dùng API này để hiển thị WiFi hiện tại
+// Không trả mật khẩu thật về app, chỉ trả has_password
+// =====================================================
+app.get("/api/admin/wifi-config", authRequired, adminRequired, async (req, res) => {
   try {
-    const { wifi_ssid, wifi_password } = req.body;
-
-    if (!wifi_ssid || wifi_ssid.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "WiFi SSID khong duoc rong",
-      });
-    }
-
-    await db.query(
-      `INSERT INTO system_config(config_key, config_value)
-       VALUES ('wifi_ssid', ?)
-       ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
-      [wifi_ssid.trim()]
-    );
-
-    if (wifi_password && wifi_password.trim().length > 0) {
-      await db.query(
-        `INSERT INTO system_config(config_key, config_value)
-         VALUES ('wifi_password', ?)
-         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
-        [wifi_password.trim()]
-      );
-    }
-
-    await db.query(
-      `INSERT INTO events(event_type, message, network_type, status)
-       VALUES ('WIFI_CONFIG_UPDATED', ?, 'APP', 'active')`,
-      [`Admin ${req.user.username} da cap nhat cau hinh WiFi`]
-    );
+    const config = await getSystemConfig([
+      "wifi_ssid",
+      "wifi_password",
+    ]);
 
     res.json({
       success: true,
-      message: "Da cap nhat cau hinh WiFi cho ESP32",
+      data: {
+        wifi_ssid: config.wifi_ssid || "",
+        has_password: !!config.wifi_password,
+      },
     });
   } catch (err) {
+    console.error("[GET WIFI CONFIG ERROR]", err);
+
     res.status(500).json({
       success: false,
       error: err.message,
     });
   }
 });
-app.get("/api/esp32/config", async (req, res) => {
+
+// =====================================================
+// ADMIN - UPDATE WIFI CONFIG
+// App Cài đặt gọi API này để đổi WiFi ESP32
+// =====================================================
+app.post("/api/admin/wifi-config", authRequired, adminRequired, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      `SELECT config_key, config_value
-       FROM system_config`
+    const { wifi_ssid, wifi_password } = req.body;
+
+    if (!wifi_ssid || String(wifi_ssid).trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Ten WiFi SSID khong duoc rong",
+      });
+    }
+
+    const finalSsid = String(wifi_ssid).trim();
+    const finalPassword =
+      wifi_password === undefined || wifi_password === null
+        ? ""
+        : String(wifi_password);
+
+    await setSystemConfig("wifi_ssid", finalSsid);
+
+    // Nếu app gửi password rỗng thì giữ password cũ
+    if (finalPassword.length > 0) {
+      await setSystemConfig("wifi_password", finalPassword);
+    }
+
+    await db.query(
+      `INSERT INTO events(event_type, message, network_type, status)
+       VALUES ('WIFI_CONFIG_UPDATED', ?, 'APP', 'active')`,
+      [`Admin ${req.user.username} da cap nhat WiFi ESP32`]
     );
 
-    const config = {};
-    rows.forEach((r) => {
-      config[r.config_key] = r.config_value;
+    res.json({
+      success: true,
+      message: "Da cap nhat cau hinh WiFi ESP32",
+      data: {
+        wifi_ssid: finalSsid,
+      },
     });
+  } catch (err) {
+    console.error("[UPDATE WIFI CONFIG ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+// =====================================================
+// ESP32 - GET ALL CONFIG
+// ESP32 gọi API này để lấy WiFi/keypad config
+// =====================================================
+app.get("/api/esp32/config", esp32ConfigGuard, async (req, res) => {
+  try {
+    const config = await getSystemConfig([
+      "wifi_ssid",
+      "wifi_password",
+      "keypad_password",
+    ]);
 
     res.json({
       success: true,
@@ -2407,11 +2517,25 @@ app.get("/api/esp32/config", async (req, res) => {
       },
     });
   } catch (err) {
+    console.error("[ESP32 CONFIG ERROR]", err);
+
     res.status(500).json({
       success: false,
       error: err.message,
     });
   }
+});
+
+// =====================================================
+// ESP32 - PING TEST
+// Dùng để test ESP32 gọi backend được chưa
+// =====================================================
+app.get("/api/esp32/ping", async (req, res) => {
+  res.json({
+    success: true,
+    message: "ESP32 backend OK",
+    time: new Date().toISOString(),
+  });
 });
 // ===============================
 // START SERVER
