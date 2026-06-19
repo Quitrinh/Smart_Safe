@@ -2315,6 +2315,104 @@ app.post("/api/esp32/command-done", async (req, res) => {
     });
   }
 });
+app.get("/api/admin/wifi-config", authRequired, adminRequired, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT config_key, config_value
+       FROM system_config
+       WHERE config_key IN ('wifi_ssid', 'wifi_password')`
+    );
+
+    const config = {};
+    rows.forEach((r) => {
+      config[r.config_key] = r.config_value;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        wifi_ssid: config.wifi_ssid || "",
+        has_password: !!config.wifi_password,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.post("/api/admin/wifi-config", authRequired, adminRequired, async (req, res) => {
+  try {
+    const { wifi_ssid, wifi_password } = req.body;
+
+    if (!wifi_ssid || wifi_ssid.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "WiFi SSID khong duoc rong",
+      });
+    }
+
+    await db.query(
+      `INSERT INTO system_config(config_key, config_value)
+       VALUES ('wifi_ssid', ?)
+       ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+      [wifi_ssid.trim()]
+    );
+
+    if (wifi_password && wifi_password.trim().length > 0) {
+      await db.query(
+        `INSERT INTO system_config(config_key, config_value)
+         VALUES ('wifi_password', ?)
+         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+        [wifi_password.trim()]
+      );
+    }
+
+    await db.query(
+      `INSERT INTO events(event_type, message, network_type, status)
+       VALUES ('WIFI_CONFIG_UPDATED', ?, 'APP', 'active')`,
+      [`Admin ${req.user.username} da cap nhat cau hinh WiFi`]
+    );
+
+    res.json({
+      success: true,
+      message: "Da cap nhat cau hinh WiFi cho ESP32",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.get("/api/esp32/config", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT config_key, config_value
+       FROM system_config`
+    );
+
+    const config = {};
+    rows.forEach((r) => {
+      config[r.config_key] = r.config_value;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        wifi_ssid: config.wifi_ssid || "",
+        wifi_password: config.wifi_password || "",
+        keypad_password: config.keypad_password || "1111",
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
