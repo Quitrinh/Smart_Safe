@@ -1863,37 +1863,37 @@ app.post("/api/admin/commands", authRequired, adminRequired, async (req, res) =>
   }
 });
 
-// ===============================
-// ADMIN TAT CANH BAO
-// ===============================
-app.post("/api/admin/alarm/off", authRequired, adminRequired, async (req, res) => {
-  try {
-    await db.query(
-      `INSERT INTO safe_commands(command, command_value, status, created_by)
-       VALUES ('TURN_OFF_ALARM', 'OFF', 'pending', ?)`,
-      [req.user.id]
-    );
+// // ===============================
+// // ADMIN TAT CANH BAO
+// // ===============================
+// app.post("/api/admin/alarm/off", authRequired, adminRequired, async (req, res) => {
+//   try {
+//     await db.query(
+//       `INSERT INTO safe_commands(command, command_value, status, created_by)
+//        VALUES ('TURN_OFF_ALARM', 'OFF', 'pending', ?)`,
+//       [req.user.id]
+//     );
 
-    await db.query(
-      `UPDATE safe_status
-       SET alarm_status = 'OFF', updated_at = CURRENT_TIMESTAMP
-       WHERE id = 1`
-    );
+//     await db.query(
+//       `UPDATE safe_status
+//        SET alarm_status = 'OFF', updated_at = CURRENT_TIMESTAMP
+//        WHERE id = 1`
+//     );
 
-    await db.query(
-      `INSERT INTO events(event_type, message, network_type, status)
-       VALUES ('ALARM_OFF', ?, 'APP', 'active')`,
-      [`Admin ${req.user.username} da tat canh bao`]
-    );
+//     await db.query(
+//       `INSERT INTO events(event_type, message, network_type, status)
+//        VALUES ('ALARM_OFF', ?, 'APP', 'active')`,
+//       [`Admin ${req.user.username} da tat canh bao`]
+//     );
 
-    res.json({
-      success: true,
-      message: "Da tao lenh tat canh bao",
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+//     res.json({
+//       success: true,
+//       message: "Da tao lenh tat canh bao",
+//     });
+//   } catch (err) {
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
 app.get("/db-test", async (req, res) => {
   try {
     const [rows] = await db.query("SELECT 1 AS ok");
