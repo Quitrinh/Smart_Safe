@@ -730,45 +730,77 @@ app.post("/api/auth-methods/enroll", async (req, res) => {
 // ===============================
 app.post("/api/auth-methods/enroll-result", async (req, res) => {
   try {
-    const { user_name, method_type, method_value, command_id } = req.body;
+    const {
+      command_id,
+      id,
+      user_name,
+      method_type,
+      method_value,
+    } = req.body;
 
-    // Kiểm tra đã tồn tại chưa (chỉ tính active)
-    const [exists] = await db.query(
-      `SELECT id, user_name
-       FROM auth_methods
-       WHERE method_type = ? AND method_value = ? AND status = 'active'
-       LIMIT 1`,
-      [method_type, method_value]
-    );
+    const commandId = command_id || id;
 
-    if (exists.length > 0) {
-      return res.status(409).json({
+    if (!user_name || !method_type || !method_value) {
+      return res.status(400).json({
         success: false,
-        message: `Đã được gán cho ${exists[0].user_name}`
+        message: "Missing user_name, method_type or method_value",
       });
     }
 
-    // Thêm auth method mới
-    await db.query(
-      `INSERT INTO auth_methods(user_name, method_type, method_value, status)
-       VALUES (?, ?, ?, 'active')`,
-      [user_name, method_type, method_value]
+    const finalType = String(method_type).toUpperCase();
+    const finalValue = String(method_value).trim().toLowerCase();
+
+    const [exists] = await db.query(
+      `SELECT id, status
+       FROM auth_methods
+       WHERE method_type = ?
+       AND method_value = ?`,
+      [finalType, finalValue]
     );
 
-    // Cập nhật trạng thái lệnh nếu có
-    if (command_id) {
+    if (exists.length > 0) {
       await db.query(
-        "UPDATE safe_commands SET status = 'done' WHERE id = ?",
-        [command_id]
+        `UPDATE auth_methods
+         SET user_name = ?,
+             status = 'active',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [user_name, exists[0].id]
+      );
+    } else {
+      await db.query(
+        `INSERT INTO auth_methods(user_name, method_type, method_value, status)
+         VALUES (?, ?, ?, 'active')`,
+        [user_name, finalType, finalValue]
+      );
+    }
+
+    if (commandId) {
+      await db.query(
+        `UPDATE safe_commands
+         SET status = 'done',
+             executed_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [commandId]
       );
     }
 
     res.json({
       success: true,
-      message: "Auth method saved"
+      message: "Enroll result saved",
+      data: {
+        user_name,
+        method_type: finalType,
+        method_value: finalValue,
+      },
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("[ENROLL RESULT ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 
