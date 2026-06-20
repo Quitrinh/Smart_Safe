@@ -2821,11 +2821,19 @@ app.get("/api/esp32/ping", async (req, res) => {
 });
 app.post("/api/auth/register", async (req, res) => {
   try {
+    console.log("[REGISTER BODY]", req.body);
+
     const { full_name, username, phone, password } = req.body;
 
     const finalFullName = String(full_name || "").trim();
     const finalUsername = String(username || "").trim().toLowerCase();
     const finalPhone = normalizePhone(phone);
+
+    console.log("[REGISTER DATA]", {
+      finalFullName,
+      finalUsername,
+      finalPhone,
+    });
 
     if (finalFullName.length < 2) {
       return res.status(400).json({
@@ -2834,10 +2842,17 @@ app.post("/api/auth/register", async (req, res) => {
       });
     }
 
+    if (!finalUsername) {
+      return res.status(400).json({
+        success: false,
+        message: "Thieu ten dang nhap",
+      });
+    }
+
     if (!/^[a-zA-Z0-9_]{3,30}$/.test(finalUsername)) {
       return res.status(400).json({
         success: false,
-        message: "Username chi gom chu, so, dau gach duoi va tu 3-30 ky tu",
+        message: "Ten dang nhap chi gom chu, so, dau gach duoi va tu 3-30 ky tu",
       });
     }
 
@@ -2868,7 +2883,7 @@ app.post("/api/auth/register", async (req, res) => {
       if (exists[0].username === finalUsername) {
         return res.status(409).json({
           success: false,
-          message: "Username da ton tai",
+          message: "Ten dang nhap da ton tai",
         });
       }
 
