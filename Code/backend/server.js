@@ -2965,12 +2965,12 @@ app.get("/api/esp32/sms-recipients", async (req, res) => {
 });
 app.get("/api/admin/users/pending", authRequired, adminRequired, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      `SELECT id, full_name, phone, email, role, status, created_at
-       FROM users
-       WHERE status = 'pending'
-       ORDER BY created_at DESC`
-    );
+const [rows] = await db.query(
+    `SELECT id, username, full_name, phone, email, role, status, created_at
+    FROM users
+    WHERE status = 'pending'
+    ORDER BY created_at DESC`
+  );
 
     res.json({
       success: true,
