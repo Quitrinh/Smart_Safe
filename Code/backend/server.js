@@ -2103,66 +2103,9 @@ app.patch("/api/notifications/read-all", authRequired, async (req, res) => {
 });
 
 // ===============================
-// ADMIN GUI THONG BAO DEN USER
-// ===============================
-app.post("/api/admin/notifications", authRequired, adminRequired, async (req, res) => {
-  try {
-    const { title, body, type, target_user_ids, send_all } = req.body;
-
-    if (!title) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing title",
-      });
-    }
-
-    let users = [];
-
-    if (send_all) {
-      const [rows] = await db.query(
-        `SELECT id FROM users
-         WHERE status = 'active'`
-      );
-      users = rows;
-    } else if (Array.isArray(target_user_ids) && target_user_ids.length > 0) {
-      const placeholders = target_user_ids.map(() => "?").join(",");
-      const [rows] = await db.query(
-        `SELECT id FROM users
-         WHERE id IN (${placeholders})
-         AND status = 'active'`,
-        target_user_ids
-      );
-      users = rows;
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: "Missing target_user_ids or send_all",
-      });
-    }
-
-    for (const user of users) {
-      await createNotification(
-        user.id,
-        title,
-        body || "",
-        type || "ADMIN_MESSAGE",
-        null
-      );
-    }
-
-    res.json({
-      success: true,
-      message: `Da gui thong bao cho ${users.length} user`,
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ===============================
 // ADMIN DASHBOARD
 // ===============================
-app.get("/api/admin/dashboard", authRequired, adminRequired, async (req, res) => {
+app.get("/api/admin/dashboard", authRequired, async (req, res) => {
   try {
     const [[userCount]] = await db.query(
       `SELECT COUNT(*) AS total FROM users WHERE status <> 'deleted'`
