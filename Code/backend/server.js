@@ -15,6 +15,39 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "smart_safe_secret_key";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
+const crypto = require("crypto");
+
+const OTP_SECRET = process.env.OTP_SECRET;
+
+if (!OTP_SECRET) {
+  throw new Error("Missing OTP_SECRET");
+}
+
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function hashOtp(otp) {
+  return crypto
+    .createHash("sha256")
+    .update(String(otp) + OTP_SECRET)
+    .digest("hex");
+}
+
+async function sendOtpSms(phone, otp) {
+  const message = `Ma OTP dat lai mat khau Smart Safe cua ban la: ${otp}. Ma co hieu luc trong 5 phut.`;
+
+  // Cách 1: nếu backend có dịch vụ SMS thì gọi API SMS ở đây.
+
+  // Cách 2: lưu vào sms_outbox để ESP32/SIM4G lấy và gửi
+  await db.query(
+    `INSERT INTO sms_outbox(phone, message, status)
+     VALUES (?, ?, 'pending')`,
+    [phone, message]
+  );
+
+  console.log("[OTP SMS QUEUED]", phone, otp);
+}
 function createOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -1308,10 +1341,57 @@ app.get("/api/auth/me", authRequired, async (req, res) => {
   });
 });
 
-// ===============================
-// AUTH - DOI MAT KHAU KHI DA LOGIN
-// ===============================
-app.post("/api/auth/change-password", authRequired, async (req, res) => {
+// // ===============================
+// // AUTH - DOI MAT KHAU KHI DA LOGIN
+// // ===============================
+// app.post("/api/auth/change-password", authRequired, async (req, res) => {
+//   try {
+//     const { old_password, new_password } = req.body;
+
+//     if (!old_password || !new_password) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Missing old_password or new_password",
+//       });
+//     }
+
+//     if (!isValidPassword(new_password)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Mat khau moi phai co it nhat 6 ky tu",
+//       });
+//     }
+
+//     const [rows] = await db.query(
+//       "SELECT password_hash FROM users WHERE id = ? LIMIT 1",
+//       [req.user.id]
+//     );
+
+//     const ok = await bcrypt.compare(old_password, rows[0].password_hash);
+
+//     if (!ok) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Mat khau cu khong dung",
+//       });
+//     }
+
+//     const hash = await bcrypt.hash(new_password, 10);
+
+//     await db.query(
+//       "UPDATE users SET password_hash = ? WHERE id = ?",
+//       [hash, req.user.id]
+//     );
+
+//     res.json({
+//       success: true,
+//       message: "Doi mat khau thanh cong",
+//     });
+//   } catch (err) {
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+app.patch("/api/auth/change-password", authRequired, async (req, res) => {
   try {
     const { old_password, new_password } = req.body;
 
@@ -1322,32 +1402,51 @@ app.post("/api/auth/change-password", authRequired, async (req, res) => {
       });
     }
 
-    if (!isValidPassword(new_password)) {
+    if (String(new_password).length < 6) {
       return res.status(400).json({
         success: false,
-        message: "Mat khau moi phai co it nhat 6 ky tu",
+        message: "Mat khau moi phai tu 6 ky tu",
       });
     }
 
     const [rows] = await db.query(
-      "SELECT password_hash FROM users WHERE id = ? LIMIT 1",
+      `SELECT id, password_hash
+       FROM users
+       WHERE id = ?
+       AND status <> 'deleted'
+       LIMIT 1`,
       [req.user.id]
     );
 
-    const ok = await bcrypt.compare(old_password, rows[0].password_hash);
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Khong tim thay user",
+      });
+    }
+
+    const user = rows[0];
+
+    const ok = await bcrypt.compare(
+      String(old_password),
+      user.password_hash
+    );
 
     if (!ok) {
-      return res.status(400).json({
+      return res.status(401).json({
         success: false,
         message: "Mat khau cu khong dung",
       });
     }
 
-    const hash = await bcrypt.hash(new_password, 10);
+    const newHash = await bcrypt.hash(String(new_password), 10);
 
     await db.query(
-      "UPDATE users SET password_hash = ? WHERE id = ?",
-      [hash, req.user.id]
+      `UPDATE users
+       SET password_hash = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [newHash, user.id]
     );
 
     res.json({
@@ -1355,10 +1454,14 @@ app.post("/api/auth/change-password", authRequired, async (req, res) => {
       message: "Doi mat khau thanh cong",
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("[CHANGE PASSWORD ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
-
 // ===============================
 // AUTH - YEU CAU RESET MAT KHAU
 // ===============================
@@ -3208,6 +3311,205 @@ app.get("/api/admin/users", authRequired, adminRequired, async (req, res) => {
       data: rows,
     });
   } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.post("/api/auth/forgot-password/request", async (req, res) => {
+  try {
+    const { login } = req.body;
+
+    if (!login) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing login",
+      });
+    }
+
+    const rawLogin = String(login).trim();
+    const usernameLogin = normalizeUsername(rawLogin);
+    const phoneLogin = normalizePhone(rawLogin);
+
+    const [rows] = await db.query(
+      `SELECT id, username, full_name, phone, status
+       FROM users
+       WHERE (
+            LOWER(username) = ?
+         OR phone = ?
+       )
+       AND status <> 'deleted'
+       LIMIT 1`,
+      [usernameLogin, phoneLogin]
+    );
+
+    if (rows.length === 0) {
+      return res.json({
+        success: true,
+        message: "Neu tai khoan ton tai, ma OTP se duoc gui ve so dien thoai",
+      });
+    }
+
+    const user = rows[0];
+
+    if (user.status === "pending") {
+      return res.status(403).json({
+        success: false,
+        message: "Tai khoan chua duoc admin phe duyet",
+      });
+    }
+
+    if (user.status === "rejected") {
+      return res.status(403).json({
+        success: false,
+        message: "Tai khoan da bi tu choi",
+      });
+    }
+
+    const otp = generateOtp();
+    const otpHash = hashOtp(otp);
+
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    await db.query(
+      `UPDATE password_reset_otps
+       SET used = 1
+       WHERE user_id = ?
+       AND used = 0`,
+      [user.id]
+    );
+
+    await db.query(
+      `INSERT INTO password_reset_otps(user_id, phone, otp_hash, expires_at)
+       VALUES (?, ?, ?, ?)`,
+      [user.id, user.phone, otpHash, expiresAt]
+    );
+
+    await sendOtpSms(user.phone, otp);
+
+    res.json({
+      success: true,
+      message: "Ma OTP da duoc gui ve so dien thoai cua ban",
+    });
+  } catch (err) {
+    console.error("[FORGOT PASSWORD REQUEST ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.post("/api/auth/forgot-password/reset", async (req, res) => {
+  try {
+    const { login, otp, new_password } = req.body;
+
+    if (!login || !otp || !new_password) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing login, otp or new_password",
+      });
+    }
+
+    if (String(new_password).length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Mat khau moi phai tu 6 ky tu",
+      });
+    }
+
+    const rawLogin = String(login).trim();
+    const usernameLogin = normalizeUsername(rawLogin);
+    const phoneLogin = normalizePhone(rawLogin);
+
+    const [users] = await db.query(
+      `SELECT id, username, phone, status
+       FROM users
+       WHERE (
+            LOWER(username) = ?
+         OR phone = ?
+       )
+       AND status <> 'deleted'
+       LIMIT 1`,
+      [usernameLogin, phoneLogin]
+    );
+
+    if (users.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Tai khoan khong hop le",
+      });
+    }
+
+    const user = users[0];
+
+    const otpHash = hashOtp(otp);
+
+    const [otpRows] = await db.query(
+      `SELECT *
+       FROM password_reset_otps
+       WHERE user_id = ?
+       AND otp_hash = ?
+       AND used = 0
+       ORDER BY id DESC
+       LIMIT 1`,
+      [user.id, otpHash]
+    );
+
+    if (otpRows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Ma OTP khong dung",
+      });
+    }
+
+    const otpData = otpRows[0];
+
+    if (new Date(otpData.expires_at) < new Date()) {
+      await db.query(
+        `UPDATE password_reset_otps
+         SET used = 1
+         WHERE id = ?`,
+        [otpData.id]
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: "Ma OTP da het han",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(String(new_password), 10);
+
+    await db.query(
+      `UPDATE users
+       SET password_hash = ?,
+           failed_login_attempts = 0,
+           locked_until = NULL,
+           status = CASE
+             WHEN status = 'locked' THEN 'active'
+             ELSE status
+           END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [passwordHash, user.id]
+    );
+
+    await db.query(
+      `UPDATE password_reset_otps
+       SET used = 1
+       WHERE id = ?`,
+      [otpData.id]
+    );
+
+    res.json({
+      success: true,
+      message: "Doi mat khau thanh cong",
+    });
+  } catch (err) {
+    console.error("[RESET PASSWORD ERROR]", err);
+
     res.status(500).json({
       success: false,
       error: err.message,
