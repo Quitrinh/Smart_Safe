@@ -2793,7 +2793,6 @@ app.get("/api/esp32/config", esp32ConfigGuard, async (req, res) => {
       "alert_vibration_enabled",
       "alert_door_enabled",
       "flame_alert_enabled",
-      "flame_threshold",
       "gps_alert_enabled",
       "gps_allowed_radius_m",
     ]);
@@ -2809,7 +2808,6 @@ app.get("/api/esp32/config", esp32ConfigGuard, async (req, res) => {
         alert_vibration_enabled: config.alert_vibration_enabled || "1",
         alert_door_enabled: config.alert_door_enabled || "1",
         flame_alert_enabled: config.flame_alert_enabled || "1",
-        flame_threshold: config.flame_threshold || "1500",
         gps_alert_enabled: config.gps_alert_enabled || "1",
         gps_allowed_radius_m: config.gps_allowed_radius_m || "50",
       },
