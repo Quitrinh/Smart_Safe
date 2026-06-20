@@ -1011,6 +1011,126 @@ app.post("/api/auth/setup-admin", async (req, res) => {
 // ===============================
 // AUTH - LOGIN
 // ===============================
+// app.post("/api/auth/login", async (req, res) => {
+//   try {
+//     const { login, password } = req.body;
+
+//     if (!login || !password) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Missing login or password",
+//       });
+//     }
+
+//     const [rows] = await db.query(
+//       `SELECT *
+//        FROM users
+//        WHERE (username = ? OR email = ? OR phone = ?)
+//        AND status <> 'deleted'
+//        LIMIT 1`,
+//       [login, login, login]
+//     );
+
+//     if (rows.length === 0) {
+//       return res.status(401).json({
+//         success: false,
+//         message: "Tai khoan hoac mat khau khong dung",
+//       });
+//     }
+
+//     const user = rows[0];
+
+//     if (
+//       user.status === "locked" &&
+//       user.locked_until &&
+//       new Date(user.locked_until) > new Date()
+//     ) {
+//       return res.status(423).json({
+//         success: false,
+//         message: "Tai khoan dang bi khoa tam thoi",
+//       });
+//     }
+
+//     const ok = await bcrypt.compare(password, user.password_hash);
+
+//     if (!ok) {
+//       const failed = (user.failed_login_attempts || 0) + 1;
+
+//       if (failed >= 5) {
+//         const lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+
+//         await db.query(
+//           `UPDATE users
+//            SET failed_login_attempts = ?, status = 'locked', locked_until = ?
+//            WHERE id = ?`,
+//           [failed, lockedUntil, user.id]
+//         );
+
+//         return res.status(423).json({
+//           success: false,
+//           message: "Sai mat khau qua 5 lan, tai khoan bi khoa 15 phut",
+//         });
+//       }
+
+//       await db.query(
+//         `UPDATE users SET failed_login_attempts = ? WHERE id = ?`,
+//         [failed, user.id]
+//       );
+
+//       return res.status(401).json({
+//         success: false,
+//         message: "Tai khoan hoac mat khau khong dung",
+//       });
+//     }
+
+//     await db.query(
+//       `UPDATE users
+//        SET failed_login_attempts = 0,
+//            locked_until = NULL,
+//            status = 'active',
+//            last_login_at = NOW()
+//        WHERE id = ?`,
+//       [user.id]
+//     );
+
+//     await db.query(
+//       `INSERT INTO events(event_type, message, network_type, status)
+//        VALUES ('LOGIN_SUCCESS', ?, 'APP', 'active')`,
+//       [`${user.username} da dang nhap thanh cong`]
+//     );
+
+//     const token = signToken(user);
+
+//     res.json({
+//       success: true,
+//       message: "Dang nhap thanh cong",
+//       token,
+//       user: {
+//         id: user.id,
+//         full_name: user.full_name,
+//         username: user.username,
+//         email: user.email,
+//         phone: user.phone,
+//         role: user.role,
+//       },
+//     });
+//   } catch (err) {
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+function normalizePhone(phone) {
+  let p = String(phone || "").trim();
+
+  p = p.replace(/\s+/g, "");
+  p = p.replace(/-/g, "");
+
+  if (p.startsWith("+84")) {
+    p = "0" + p.substring(3);
+  }
+
+  return p;
+}
+
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { login, password } = req.body;
@@ -1022,13 +1142,21 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
+    const rawLogin = String(login).trim();
+    const phoneLogin = normalizePhone(rawLogin);
+
     const [rows] = await db.query(
       `SELECT *
        FROM users
-       WHERE (username = ? OR email = ? OR phone = ?)
+       WHERE (
+            username = ?
+         OR email = ?
+         OR phone = ?
+         OR phone = ?
+       )
        AND status <> 'deleted'
        LIMIT 1`,
-      [login, login, login]
+      [rawLogin, rawLogin, rawLogin, phoneLogin]
     );
 
     if (rows.length === 0) {
@@ -1040,18 +1168,56 @@ app.post("/api/auth/login", async (req, res) => {
 
     const user = rows[0];
 
-    if (
-      user.status === "locked" &&
-      user.locked_until &&
-      new Date(user.locked_until) > new Date()
-    ) {
-      return res.status(423).json({
+    // =====================================================
+    // CHẶN TÀI KHOẢN CHƯA ĐƯỢC ADMIN DUYỆT
+    // =====================================================
+    if (user.status === "pending") {
+      return res.status(403).json({
         success: false,
-        message: "Tai khoan dang bi khoa tam thoi",
+        code: "ACCOUNT_PENDING",
+        message: "Tai khoan dang cho admin phe duyet",
       });
     }
 
-    const ok = await bcrypt.compare(password, user.password_hash);
+    // =====================================================
+    // CHẶN TÀI KHOẢN BỊ ADMIN TỪ CHỐI
+    // =====================================================
+    if (user.status === "rejected") {
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_REJECTED",
+        message: "Tai khoan da bi admin tu choi",
+      });
+    }
+
+    // =====================================================
+    // CHẶN TÀI KHOẢN BỊ KHÓA
+    // locked_until có thời gian tương lai = khóa tạm thời
+    // locked_until NULL = admin khóa thủ công
+    // =====================================================
+    if (user.status === "locked") {
+      if (
+        user.locked_until &&
+        new Date(user.locked_until) <= new Date()
+      ) {
+        // Khóa tạm thời đã hết hạn, cho kiểm tra password tiếp
+        console.log("[LOGIN] Temporary lock expired");
+      } else {
+        return res.status(423).json({
+          success: false,
+          code: "ACCOUNT_LOCKED",
+          message: "Tai khoan dang bi khoa",
+        });
+      }
+    }
+
+    // =====================================================
+    // CHECK PASSWORD
+    // =====================================================
+    const ok = await bcrypt.compare(
+      String(password),
+      user.password_hash
+    );
 
     if (!ok) {
       const failed = (user.failed_login_attempts || 0) + 1;
@@ -1061,19 +1227,24 @@ app.post("/api/auth/login", async (req, res) => {
 
         await db.query(
           `UPDATE users
-           SET failed_login_attempts = ?, status = 'locked', locked_until = ?
+           SET failed_login_attempts = ?,
+               status = 'locked',
+               locked_until = ?
            WHERE id = ?`,
           [failed, lockedUntil, user.id]
         );
 
         return res.status(423).json({
           success: false,
+          code: "TEMP_LOCKED",
           message: "Sai mat khau qua 5 lan, tai khoan bi khoa 15 phut",
         });
       }
 
       await db.query(
-        `UPDATE users SET failed_login_attempts = ? WHERE id = ?`,
+        `UPDATE users
+         SET failed_login_attempts = ?
+         WHERE id = ?`,
         [failed, user.id]
       );
 
@@ -1083,6 +1254,10 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
+    // =====================================================
+    // LOGIN SUCCESS
+    // Chỉ những tài khoản đã active hoặc locked hết hạn mới tới được đây
+    // =====================================================
     await db.query(
       `UPDATE users
        SET failed_login_attempts = 0,
@@ -1093,13 +1268,27 @@ app.post("/api/auth/login", async (req, res) => {
       [user.id]
     );
 
-    await db.query(
-      `INSERT INTO events(event_type, message, network_type, status)
-       VALUES ('LOGIN_SUCCESS', ?, 'APP', 'active')`,
-      [`${user.username} da dang nhap thanh cong`]
-    );
+    try {
+      await db.query(
+        `INSERT INTO events(event_type, message, network_type, status)
+         VALUES ('LOGIN_SUCCESS', ?, 'APP', 'active')`,
+        [
+          `${
+            user.username ||
+            user.full_name ||
+            user.phone ||
+            "User"
+          } da dang nhap thanh cong`,
+        ]
+      );
+    } catch (eventErr) {
+      console.log("[LOGIN EVENT SKIP]", eventErr.message);
+    }
 
-    const token = signToken(user);
+    const token = signToken({
+      ...user,
+      status: "active",
+    });
 
     res.json({
       success: true,
@@ -1112,13 +1301,18 @@ app.post("/api/auth/login", async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        status: "active",
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("[LOGIN ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
-
 // ===============================
 // AUTH - THONG TIN USER DANG NHAP
 // ===============================
@@ -2536,6 +2730,238 @@ app.get("/api/esp32/ping", async (req, res) => {
     message: "ESP32 backend OK",
     time: new Date().toISOString(),
   });
+});
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { full_name, phone, password } = req.body;
+
+    const finalPhone = normalizePhone(phone);
+
+    if (!full_name || String(full_name).trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: "Ho ten khong hop le",
+      });
+    }
+
+    if (!/^0\d{9}$/.test(finalPhone)) {
+      return res.status(400).json({
+        success: false,
+        message: "So dien thoai khong hop le",
+      });
+    }
+
+    if (!password || String(password).length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Mat khau phai tu 6 ky tu",
+      });
+    }
+
+    const [exists] = await db.query(
+      `SELECT id, status
+       FROM users
+       WHERE phone = ?
+       LIMIT 1`,
+      [finalPhone]
+    );
+
+    if (exists.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "So dien thoai da duoc dang ky",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(String(password), 10);
+
+    await db.query(
+      `INSERT INTO users(full_name, phone, password_hash, role, status)
+       VALUES (?, ?, ?, 'user', 'pending')`,
+      [
+        String(full_name).trim(),
+        finalPhone,
+        passwordHash,
+      ]
+    );
+
+    // Optional: tạo thông báo cho admin
+    try {
+      await db.query(
+        `INSERT INTO notifications(user_id, title, message, type, status)
+         SELECT id, ?, ?, 'USER_REGISTER', 'unread'
+         FROM users
+         WHERE role = 'admin'
+         AND status = 'active'`,
+        [
+          "Tài khoản mới chờ duyệt",
+          `Số điện thoại ${finalPhone} vừa đăng ký tài khoản`,
+        ]
+      );
+    } catch (notifyErr) {
+      console.log("[REGISTER NOTIFY ADMIN SKIP]", notifyErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: "Dang ky thanh cong, vui long cho admin phe duyet",
+      status: "pending",
+    });
+  } catch (err) {
+    console.error("[REGISTER ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+// app.post("/api/auth/register", async (req, res) => {
+//   try {
+//     const { full_name, phone, password } = req.body;
+
+//     const finalPhone = normalizePhone(phone);
+
+//     if (!full_name || String(full_name).trim().length < 2) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Ho ten khong hop le",
+//       });
+//     }
+
+//     if (!/^0\d{9}$/.test(finalPhone)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "So dien thoai khong hop le",
+//       });
+//     }
+
+//     if (!password || String(password).length < 6) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Mat khau phai tu 6 ky tu",
+//       });
+//     }
+
+//     const [exists] = await db.query(
+//       `SELECT id FROM users WHERE phone = ? LIMIT 1`,
+//       [finalPhone]
+//     );
+
+//     if (exists.length > 0) {
+//       return res.status(409).json({
+//         success: false,
+//         message: "So dien thoai da duoc dang ky",
+//       });
+//     }
+
+//     const passwordHash = await bcrypt.hash(String(password), 10);
+
+//     await db.query(
+//       `INSERT INTO users(full_name, phone, password_hash, role, status)
+//        VALUES (?, ?, ?, 'user', 'active')`,
+//       [
+//         String(full_name).trim(),
+//         finalPhone,
+//         passwordHash,
+//       ]
+//     );
+
+//     res.json({
+//       success: true,
+//       message: "Dang ky tai khoan thanh cong",
+//     });
+//   } catch (err) {
+//     console.error("[REGISTER ERROR]", err);
+
+//     res.status(500).json({
+//       success: false,
+//       error: err.message,
+//     });
+//   }
+// });
+app.get("/api/admin/users/pending", authRequired, adminRequired, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT id, full_name, phone, email, role, status, created_at
+       FROM users
+       WHERE status = 'pending'
+       ORDER BY created_at DESC`
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.patch("/api/admin/users/:id/approve", authRequired, adminRequired, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const [result] = await db.query(
+      `UPDATE users
+       SET status = 'active',
+           role = 'user',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?
+       AND status = 'pending'`,
+      [userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Khong tim thay tai khoan pending",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Da phe duyet tai khoan",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.patch("/api/admin/users/:id/reject", authRequired, adminRequired, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const [result] = await db.query(
+      `UPDATE users
+       SET status = 'rejected',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?
+       AND status = 'pending'`,
+      [userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Khong tim thay tai khoan pending",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Da tu choi tai khoan",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
 });
 // ===============================
 // START SERVER
