@@ -2759,11 +2759,12 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     const [exists] = await db.query(
-      `SELECT id, status
+      `SELECT id
        FROM users
        WHERE phone = ?
+          OR username = ?
        LIMIT 1`,
-      [finalPhone]
+      [finalPhone, finalPhone]
     );
 
     if (exists.length > 0) {
@@ -2775,32 +2776,18 @@ app.post("/api/auth/register", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(String(password), 10);
 
+    const username = finalPhone;
+
     await db.query(
-      `INSERT INTO users(full_name, phone, password_hash, role, status)
-       VALUES (?, ?, ?, 'user', 'pending')`,
+      `INSERT INTO users(username, full_name, phone, password_hash, role, status)
+       VALUES (?, ?, ?, ?, 'user', 'pending')`,
       [
+        username,
         String(full_name).trim(),
         finalPhone,
         passwordHash,
       ]
     );
-
-    // Optional: tạo thông báo cho admin
-    try {
-      await db.query(
-        `INSERT INTO notifications(user_id, title, message, type, status)
-         SELECT id, ?, ?, 'USER_REGISTER', 'unread'
-         FROM users
-         WHERE role = 'admin'
-         AND status = 'active'`,
-        [
-          "Tài khoản mới chờ duyệt",
-          `Số điện thoại ${finalPhone} vừa đăng ký tài khoản`,
-        ]
-      );
-    } catch (notifyErr) {
-      console.log("[REGISTER NOTIFY ADMIN SKIP]", notifyErr.message);
-    }
 
     res.json({
       success: true,
