@@ -1131,6 +1131,12 @@ function normalizePhone(phone) {
   return p;
 }
 
+function normalizeUsername(username) {
+  return String(username || "")
+    .trim()
+    .toLowerCase();
+}
+
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { login, password } = req.body;
@@ -1143,20 +1149,19 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const rawLogin = String(login).trim();
+    const usernameLogin = normalizeUsername(rawLogin);
     const phoneLogin = normalizePhone(rawLogin);
 
     const [rows] = await db.query(
       `SELECT *
        FROM users
        WHERE (
-            username = ?
-         OR email = ?
-         OR phone = ?
+            LOWER(username) = ?
          OR phone = ?
        )
        AND status <> 'deleted'
        LIMIT 1`,
-      [rawLogin, rawLogin, rawLogin, phoneLogin]
+      [usernameLogin, phoneLogin]
     );
 
     if (rows.length === 0) {
@@ -1168,9 +1173,6 @@ app.post("/api/auth/login", async (req, res) => {
 
     const user = rows[0];
 
-    // =====================================================
-    // CHẶN TÀI KHOẢN CHƯA ĐƯỢC ADMIN DUYỆT
-    // =====================================================
     if (user.status === "pending") {
       return res.status(403).json({
         success: false,
@@ -1179,9 +1181,6 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
-    // =====================================================
-    // CHẶN TÀI KHOẢN BỊ ADMIN TỪ CHỐI
-    // =====================================================
     if (user.status === "rejected") {
       return res.status(403).json({
         success: false,
@@ -1190,17 +1189,11 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
-    // =====================================================
-    // CHẶN TÀI KHOẢN BỊ KHÓA
-    // locked_until có thời gian tương lai = khóa tạm thời
-    // locked_until NULL = admin khóa thủ công
-    // =====================================================
     if (user.status === "locked") {
       if (
         user.locked_until &&
         new Date(user.locked_until) <= new Date()
       ) {
-        // Khóa tạm thời đã hết hạn, cho kiểm tra password tiếp
         console.log("[LOGIN] Temporary lock expired");
       } else {
         return res.status(423).json({
@@ -1211,9 +1204,6 @@ app.post("/api/auth/login", async (req, res) => {
       }
     }
 
-    // =====================================================
-    // CHECK PASSWORD
-    // =====================================================
     const ok = await bcrypt.compare(
       String(password),
       user.password_hash
@@ -1254,10 +1244,6 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
-    // =====================================================
-    // LOGIN SUCCESS
-    // Chỉ những tài khoản đã active hoặc locked hết hạn mới tới được đây
-    // =====================================================
     await db.query(
       `UPDATE users
        SET failed_login_attempts = 0,
@@ -1298,7 +1284,6 @@ app.post("/api/auth/login", async (req, res) => {
         id: user.id,
         full_name: user.full_name,
         username: user.username,
-        email: user.email,
         phone: user.phone,
         role: user.role,
         status: "active",
