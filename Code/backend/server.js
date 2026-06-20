@@ -2880,6 +2880,102 @@ app.post("/api/auth/register", async (req, res) => {
 //     });
 //   }
 // });
+app.get("/api/sms-recipients", authRequired, adminRequired, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT id, user_id, name, phone, enabled, created_at
+       FROM sms_recipients
+       ORDER BY created_at DESC`
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.post("/api/sms-recipients", authRequired, adminRequired, async (req, res) => {
+  try {
+    const { name, phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Thieu so dien thoai",
+      });
+    }
+
+    await db.query(
+      `INSERT INTO sms_recipients(name, phone, enabled, created_by)
+       VALUES (?, ?, 1, ?)
+       ON DUPLICATE KEY UPDATE
+       name = VALUES(name),
+       enabled = 1,
+       updated_at = CURRENT_TIMESTAMP`,
+      [
+        name || "Owner",
+        phone,
+        req.user.id,
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: "Da them so dien thoai nhan SMS",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.delete("/api/sms-recipients/:id", authRequired, adminRequired, async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    await db.query(
+      `DELETE FROM sms_recipients
+       WHERE id = ?`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: "Da xoa so nhan SMS",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.get("/api/esp32/sms-recipients", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT phone
+       FROM sms_recipients
+       WHERE enabled = 1
+       ORDER BY id ASC`
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 app.get("/api/admin/users/pending", authRequired, adminRequired, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -2903,29 +2999,69 @@ app.get("/api/admin/users/pending", authRequired, adminRequired, async (req, res
 app.patch("/api/admin/users/:id/approve", authRequired, adminRequired, async (req, res) => {
   try {
     const userId = req.params.id;
+    const { allow_sms } = req.body;
 
-    const [result] = await db.query(
+    const [rows] = await db.query(
+      `SELECT id, full_name, phone, status
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Khong tim thay user",
+      });
+    }
+
+    const user = rows[0];
+
+    if (user.status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Tai khoan nay khong o trang thai cho duyet",
+      });
+    }
+
+    await db.query(
       `UPDATE users
        SET status = 'active',
            role = 'user',
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?
-       AND status = 'pending'`,
+       WHERE id = ?`,
       [userId]
     );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Khong tim thay tai khoan pending",
-      });
+    if (allow_sms === true || allow_sms === 1) {
+      await db.query(
+        `INSERT INTO sms_recipients(user_id, name, phone, enabled, created_by)
+         VALUES (?, ?, ?, 1, ?)
+         ON DUPLICATE KEY UPDATE
+         user_id = VALUES(user_id),
+         name = VALUES(name),
+         enabled = 1,
+         updated_at = CURRENT_TIMESTAMP`,
+        [
+          user.id,
+          user.full_name || "User",
+          user.phone,
+          req.user.id,
+        ]
+      );
     }
 
     res.json({
       success: true,
-      message: "Da phe duyet tai khoan",
+      message:
+        allow_sms === true || allow_sms === 1
+          ? "Da phe duyet tai khoan va cho nhan SMS"
+          : "Da phe duyet tai khoan",
     });
   } catch (err) {
+    console.error("[APPROVE USER ERROR]", err);
+
     res.status(500).json({
       success: false,
       error: err.message,
@@ -2948,7 +3084,7 @@ app.patch("/api/admin/users/:id/reject", authRequired, adminRequired, async (req
     if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
-        message: "Khong tim thay tai khoan pending",
+        message: "Khong tim thay tai khoan cho duyet",
       });
     }
 
