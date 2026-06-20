@@ -3086,6 +3086,133 @@ app.patch("/api/admin/users/:id/reject", authRequired, adminRequired, async (req
     });
   }
 });
+app.delete("/api/admin/users/:id", authRequired, adminRequired, async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User id khong hop le",
+      });
+    }
+
+    if (userId === req.user.id) {
+      return res.status(400).json({
+        success: false,
+        message: "Admin khong the tu xoa tai khoan cua minh",
+      });
+    }
+
+    const [rows] = await db.query(
+      `SELECT id, username, phone, role, status
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Khong tim thay user",
+      });
+    }
+
+    const user = rows[0];
+
+    if (user.role === "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Khong duoc xoa tai khoan admin",
+      });
+    }
+
+    if (user.status === "deleted") {
+      return res.json({
+        success: true,
+        message: "Tai khoan nay da bi xoa truoc do",
+      });
+    }
+
+    // Soft delete + đổi username/phone để số điện thoại có thể đăng ký lại sau này
+    await db.query(
+      `UPDATE users
+       SET status = 'deleted',
+           username = CONCAT('deleted_', id, '_', username),
+           phone = CONCAT('del_', id),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [userId]
+    );
+
+    // Tắt token nhận push notification của user này
+    try {
+      await db.query(
+        `UPDATE device_tokens
+         SET status = 'inactive'
+         WHERE user_id = ?`,
+        [userId]
+      );
+    } catch (tokenErr) {
+      console.log("[DELETE USER TOKEN SKIP]", tokenErr.message);
+    }
+
+    // Xoá khỏi danh sách nhận SMS nếu có
+    try {
+      await db.query(
+        `DELETE FROM sms_recipients
+         WHERE user_id = ?`,
+        [userId]
+      );
+    } catch (smsErr) {
+      console.log("[DELETE USER SMS SKIP]", smsErr.message);
+    }
+
+    // Ghi event
+    try {
+      await db.query(
+        `INSERT INTO events(event_type, message, network_type, status)
+         VALUES ('USER_DELETED', ?, 'APP', 'active')`,
+        [`Admin da xoa user ${user.username || user.phone}`]
+      );
+    } catch (eventErr) {
+      console.log("[DELETE USER EVENT SKIP]", eventErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: "Da xoa tai khoan user",
+    });
+  } catch (err) {
+    console.error("[DELETE USER ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.get("/api/admin/users", authRequired, adminRequired, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT id, username, full_name, phone, role, status, created_at
+       FROM users
+       WHERE status <> 'deleted'
+       ORDER BY id DESC`
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
