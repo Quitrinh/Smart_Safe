@@ -3567,27 +3567,7 @@ app.patch("/api/esp32/sms-outbox/:id/sent", async (req, res) => {
     });
   }
 });
-app.patch("/api/esp32/sms-outbox/:id/failed", async (req, res) => {
-  try {
-    await db.query(
-      `UPDATE sms_outbox
-       SET status = 'failed'
-       WHERE id = ?`,
-      [req.params.id]
-    );
 
-    res.json({
-      success: true,
-      message: "SMS marked as failed",
-    });
-  } catch (err) {
-    console.error("[SMS FAILED ERROR]", err);
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
-  }
-});
 // ===============================
 // START SERVER
 // ===============================
