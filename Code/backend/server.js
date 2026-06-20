@@ -3516,6 +3516,78 @@ app.post("/api/auth/forgot-password/reset", async (req, res) => {
     });
   }
 });
+app.get("/api/esp32/sms-outbox/next", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT id, phone, message
+       FROM sms_outbox
+       WHERE status = 'pending'
+       ORDER BY id ASC
+       LIMIT 1`
+    );
+
+    if (rows.length === 0) {
+      return res.json({
+        success: true,
+        data: null,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: rows[0],
+    });
+  } catch (err) {
+    console.error("[SMS OUTBOX NEXT ERROR]", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.patch("/api/esp32/sms-outbox/:id/sent", async (req, res) => {
+  try {
+    await db.query(
+      `UPDATE sms_outbox
+       SET status = 'sent',
+           sent_at = NOW()
+       WHERE id = ?`,
+      [req.params.id]
+    );
+
+    res.json({
+      success: true,
+      message: "SMS marked as sent",
+    });
+  } catch (err) {
+    console.error("[SMS SENT ERROR]", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+app.patch("/api/esp32/sms-outbox/:id/failed", async (req, res) => {
+  try {
+    await db.query(
+      `UPDATE sms_outbox
+       SET status = 'failed'
+       WHERE id = ?`,
+      [req.params.id]
+    );
+
+    res.json({
+      success: true,
+      message: "SMS marked as failed",
+    });
+  } catch (err) {
+    console.error("[SMS FAILED ERROR]", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
