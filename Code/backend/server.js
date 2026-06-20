@@ -3663,7 +3663,7 @@ app.get("/api/admin/config", authRequired, adminRequired, async (req, res) => {
       data: rows,
     });
   } catch (err) {
-    console.error("[GET CONFIG ERROR]", err);
+    console.error("[GET ADMIN CONFIG ERROR]", err);
 
     res.status(500).json({
       success: false,
