@@ -2788,6 +2788,14 @@ app.get("/api/esp32/config", esp32ConfigGuard, async (req, res) => {
       "wifi_ssid",
       "wifi_password",
       "keypad_password",
+
+      "max_wrong_password",
+      "alert_vibration_enabled",
+      "alert_door_enabled",
+      "flame_alert_enabled",
+      "flame_threshold",
+      "gps_alert_enabled",
+      "gps_allowed_radius_m",
     ]);
 
     res.json({
@@ -2796,6 +2804,14 @@ app.get("/api/esp32/config", esp32ConfigGuard, async (req, res) => {
         wifi_ssid: config.wifi_ssid || "",
         wifi_password: config.wifi_password || "",
         keypad_password: config.keypad_password || "1111",
+
+        max_wrong_password: config.max_wrong_password || "5",
+        alert_vibration_enabled: config.alert_vibration_enabled || "1",
+        alert_door_enabled: config.alert_door_enabled || "1",
+        flame_alert_enabled: config.flame_alert_enabled || "1",
+        flame_threshold: config.flame_threshold || "1500",
+        gps_alert_enabled: config.gps_alert_enabled || "1",
+        gps_allowed_radius_m: config.gps_allowed_radius_m || "50",
       },
     });
   } catch (err) {
@@ -3582,7 +3598,60 @@ app.patch("/api/esp32/sms-outbox/:id/sent", async (req, res) => {
     });
   }
 });
+app.patch("/api/admin/config/bulk", authRequired, adminRequired, async (req, res) => {
+  try {
+    const { values } = req.body;
 
+    if (!values || typeof values !== "object") {
+      return res.status(400).json({
+        success: false,
+        message: "Missing values",
+      });
+    }
+
+    const allowKeys = [
+      "max_wrong_password",
+      "gps_allowed_radius_m",
+      "alert_vibration_enabled",
+      "alert_door_enabled",
+      "gps_alert_enabled",
+      "flame_alert_enabled",
+      "flame_threshold",
+    ];
+
+    for (const key of Object.keys(values)) {
+      if (!allowKeys.includes(key)) {
+        return res.status(400).json({
+          success: false,
+          message: `Config key khong hop le: ${key}`,
+        });
+      }
+    }
+
+    for (const [key, value] of Object.entries(values)) {
+      await db.query(
+        `INSERT INTO system_config(config_key, config_value)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE
+         config_value = VALUES(config_value),
+         updated_at = CURRENT_TIMESTAMP`,
+        [key, String(value)]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: "Da cap nhat cau hinh",
+    });
+  } catch (err) {
+    console.error("[CONFIG BULK ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
