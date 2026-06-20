@@ -3650,6 +3650,27 @@ app.patch("/api/admin/config/bulk", authRequired, adminRequired, async (req, res
     });
   }
 });
+app.get("/api/admin/config", authRequired, adminRequired, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT config_key, config_value
+       FROM system_config
+       ORDER BY config_key`
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (err) {
+    console.error("[GET CONFIG ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ===============================
 // START SERVER
 // ===============================
