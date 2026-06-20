@@ -2718,14 +2718,23 @@ app.get("/api/esp32/ping", async (req, res) => {
 });
 app.post("/api/auth/register", async (req, res) => {
   try {
-    const { full_name, phone, password } = req.body;
+    const { full_name, username, phone, password } = req.body;
 
+    const finalFullName = String(full_name || "").trim();
+    const finalUsername = String(username || "").trim().toLowerCase();
     const finalPhone = normalizePhone(phone);
 
-    if (!full_name || String(full_name).trim().length < 2) {
+    if (finalFullName.length < 2) {
       return res.status(400).json({
         success: false,
         message: "Ho ten khong hop le",
+      });
+    }
+
+    if (!/^[a-zA-Z0-9_]{3,30}$/.test(finalUsername)) {
+      return res.status(400).json({
+        success: false,
+        message: "Username chi gom chu, so, dau gach duoi va tu 3-30 ky tu",
       });
     }
 
@@ -2744,31 +2753,38 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     const [exists] = await db.query(
-      `SELECT id
+      `SELECT id, username, phone
        FROM users
-       WHERE phone = ?
-          OR username = ?
+       WHERE username = ?
+          OR phone = ?
        LIMIT 1`,
-      [finalPhone, finalPhone]
+      [finalUsername, finalPhone]
     );
 
     if (exists.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "So dien thoai da duoc dang ky",
-      });
+      if (exists[0].username === finalUsername) {
+        return res.status(409).json({
+          success: false,
+          message: "Username da ton tai",
+        });
+      }
+
+      if (exists[0].phone === finalPhone) {
+        return res.status(409).json({
+          success: false,
+          message: "So dien thoai da duoc dang ky",
+        });
+      }
     }
 
     const passwordHash = await bcrypt.hash(String(password), 10);
-
-    const username = finalPhone;
 
     await db.query(
       `INSERT INTO users(username, full_name, phone, password_hash, role, status)
        VALUES (?, ?, ?, ?, 'user', 'pending')`,
       [
-        username,
-        String(full_name).trim(),
+        finalUsername,
+        finalFullName,
         finalPhone,
         passwordHash,
       ]
