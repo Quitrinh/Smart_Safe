@@ -926,28 +926,92 @@ app.post("/api/auth-methods/remove", async (req, res) => {
   }
 });
 // POST /api/events/remove
-app.post("/api/events/remove", async (req, res) => {
+app.post("/api/events", async (req, res) => {
   try {
-    const { ids } = req.body;
+    const {
+      event_type,
+      message,
+      gps_lat,
+      gps_lng,
+      network_type,
+      distance_m,
+    } = req.body;
 
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing ids",
-      });
-    }
+    const finalEventType = (event_type || "UNKNOWN").toUpperCase();
+    const finalMessage = message || "";
 
-    await db.query(
-      "UPDATE events SET status='deleted' WHERE id IN (?)",
-      [ids]
+    const [result] = await db.query(
+      `INSERT INTO events(event_type, message, gps_lat, gps_lng, network_type, status, distance_m)
+       VALUES (?, ?, ?, ?, ?, 'active', ?)`,
+      [
+        finalEventType,
+        finalMessage,
+        gps_lat ?? null,
+        gps_lng ?? null,
+        network_type || "WIFI",
+        distance_m ?? null,
+      ]
     );
+
+    const alarmKeywords = [
+      "TEST_PUSH",
+      "INTRUSION",
+      "VIBRATION",
+      "DOOR",
+      "GAS",
+      "SMOKE",
+      "FIRE",
+      "FLAME",
+      "UNLOCK_FAILED",
+      "WRONG_PASSWORD",
+      "SAFE_MOVED",
+      "ALARM",
+    ];
+
+    const isAlarmEvent = alarmKeywords.some((key) =>
+      finalEventType.includes(key)
+    );
+
+    let pushResult = null;
+
+    if (isAlarmEvent) {
+      const title = "Cảnh báo két thông minh";
+      const body =
+        finalMessage || `Phát hiện sự kiện bất thường: ${finalEventType}`;
+
+      try {
+        pushResult = await sendPushToAllActiveDevices(
+          title,
+          body,
+          {
+            event_id: result.insertId,
+            event_type: finalEventType,
+            gps_lat: gps_lat || "",
+            gps_lng: gps_lng || "",
+          }
+        );
+      } catch (pushErr) {
+        console.error("[PUSH ERROR]", pushErr.message);
+      }
+    }
 
     res.json({
       success: true,
-      message: `Deleted ${ids.length} events`,
+      message: isAlarmEvent
+        ? "Event saved and push sent"
+        : "Event saved, not alarm event",
+      event_id: result.insertId,
+      is_alarm: isAlarmEvent,
+      push: pushResult
+        ? {
+            successCount: pushResult.successCount,
+            failureCount: pushResult.failureCount,
+          }
+        : null,
     });
-
   } catch (err) {
+    console.error("[SAVE EVENT ERROR]", err);
+
     res.status(500).json({
       success: false,
       error: err.message,
