@@ -2038,32 +2038,31 @@ app.post("/api/device-tokens", authRequired, async (req, res) => {
 // ===============================
 app.get("/api/notifications", authRequired, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      `SELECT id,
-              event_type,
-              message,
-              status,
-              gps_lat,
-              gps_lng,
-              distance_m,
-              DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z') AS created_at
-       FROM events
-       ORDER BY created_at DESC
-       LIMIT 100`
-    );
+    const { unread_only } = req.query;
+
+    let sql = `
+      SELECT id, title, body, type, ref_id, is_read, created_at
+      FROM notifications
+      WHERE user_id = ?
+      AND status = 'active'
+    `;
+
+    const params = [req.user.id];
+
+    if (unread_only === "1") {
+      sql += " AND is_read = 0";
+    }
+
+    sql += " ORDER BY id DESC LIMIT 100";
+
+    const [rows] = await db.query(sql, params);
 
     res.json({
       success: true,
       data: rows,
-      unread_count: rows.filter(r => r.status === "active").length,
     });
   } catch (err) {
-    console.error("[GET NOTIFICATIONS ERROR]", err);
-
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
