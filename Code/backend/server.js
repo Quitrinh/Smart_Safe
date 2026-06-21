@@ -2009,11 +2009,15 @@ app.post("/api/device-tokens", authRequired, async (req, res) => {
       `INSERT INTO device_tokens(user_id, device_token, platform, status, last_seen_at)
        VALUES (?, ?, ?, 'active', CURRENT_TIMESTAMP)
        ON DUPLICATE KEY UPDATE
-       user_id = VALUES(user_id),
-       platform = VALUES(platform),
-       status = 'active',
-       last_seen_at = CURRENT_TIMESTAMP`,
-      [req.user.id, device_token, platform || "android"]
+         user_id = VALUES(user_id),
+         platform = VALUES(platform),
+         status = 'active',
+         last_seen_at = CURRENT_TIMESTAMP`,
+      [
+        req.user.id,
+        device_token,
+        platform || "android",
+      ]
     );
 
     res.json({
@@ -2021,6 +2025,8 @@ app.post("/api/device-tokens", authRequired, async (req, res) => {
       message: "Device token saved",
     });
   } catch (err) {
+    console.error("[DEVICE TOKEN ERROR]", err);
+
     res.status(500).json({
       success: false,
       error: err.message,
