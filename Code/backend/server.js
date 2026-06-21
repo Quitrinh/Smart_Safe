@@ -382,25 +382,18 @@ async function sendPushToUser(userId, title, body, type = "SYSTEM", refId = null
 
 async function sendPushToAdmins(title, body, type = "ALARM", refId = null) {
   try {
-    console.log("[FCM] sendPushToAdmins redirected to all active devices");
-
-    const result = await sendPushToAllActiveDevices(
-      title,
-      body,
-      {
-        type,
-        ref_id: refId || "",
-      }
+    const [admins] = await db.query(
+      `SELECT id
+       FROM users
+       WHERE role = 'admin'
+       AND status = 'active'`
     );
 
-    return result;
+    for (const admin of admins) {
+      await sendPushToUser(admin.id, title, body, type, refId);
+    }
   } catch (err) {
-    console.error("[FCM SEND ALL ERROR]", err.message);
-    return {
-      successCount: 0,
-      failureCount: 1,
-      error: err.message,
-    };
+    console.error("[FCM SEND ADMINS ERROR]", err.message);
   }
 }
 // ===============================
@@ -933,92 +926,28 @@ app.post("/api/auth-methods/remove", async (req, res) => {
   }
 });
 // POST /api/events/remove
-app.post("/api/events", async (req, res) => {
+app.post("/api/events/remove", async (req, res) => {
   try {
-    const {
-      event_type,
-      message,
-      gps_lat,
-      gps_lng,
-      network_type,
-      distance_m,
-    } = req.body;
+    const { ids } = req.body;
 
-    const finalEventType = (event_type || "UNKNOWN").toUpperCase();
-    const finalMessage = message || "";
-
-    const [result] = await db.query(
-      `INSERT INTO events(event_type, message, gps_lat, gps_lng, network_type, status, distance_m)
-       VALUES (?, ?, ?, ?, ?, 'active', ?)`,
-      [
-        finalEventType,
-        finalMessage,
-        gps_lat ?? null,
-        gps_lng ?? null,
-        network_type || "WIFI",
-        distance_m ?? null,
-      ]
-    );
-
-    const alarmKeywords = [
-      "TEST_PUSH",
-      "INTRUSION",
-      "VIBRATION",
-      "DOOR",
-      "GAS",
-      "SMOKE",
-      "FIRE",
-      "FLAME",
-      "UNLOCK_FAILED",
-      "WRONG_PASSWORD",
-      "SAFE_MOVED",
-      "ALARM",
-    ];
-
-    const isAlarmEvent = alarmKeywords.some((key) =>
-      finalEventType.includes(key)
-    );
-
-    let pushResult = null;
-
-    if (isAlarmEvent) {
-      const title = "Cảnh báo két thông minh";
-      const body =
-        finalMessage || `Phát hiện sự kiện bất thường: ${finalEventType}`;
-
-      try {
-        pushResult = await sendPushToAllActiveDevices(
-          title,
-          body,
-          {
-            event_id: result.insertId,
-            event_type: finalEventType,
-            gps_lat: gps_lat || "",
-            gps_lng: gps_lng || "",
-          }
-        );
-      } catch (pushErr) {
-        console.error("[PUSH ERROR]", pushErr.message);
-      }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing ids",
+      });
     }
+
+    await db.query(
+      "UPDATE events SET status='deleted' WHERE id IN (?)",
+      [ids]
+    );
 
     res.json({
       success: true,
-      message: isAlarmEvent
-        ? "Event saved and push sent"
-        : "Event saved, not alarm event",
-      event_id: result.insertId,
-      is_alarm: isAlarmEvent,
-      push: pushResult
-        ? {
-            successCount: pushResult.successCount,
-            failureCount: pushResult.failureCount,
-          }
-        : null,
+      message: `Deleted ${ids.length} events`,
     });
-  } catch (err) {
-    console.error("[SAVE EVENT ERROR]", err);
 
+  } catch (err) {
     res.status(500).json({
       success: false,
       error: err.message,
@@ -2330,11 +2259,9 @@ async function sendPushToAllActiveDevices(title, body, data = {}) {
        WHERE status = 'active'`
     );
 
-    const tokens = [...new Set(
-      rows
-        .map(r => r.device_token)
-        .filter(Boolean)
-    )];
+    const tokens = rows
+      .map(r => r.device_token)
+      .filter(Boolean);
 
     if (tokens.length === 0) {
       console.log("[FCM] No active device tokens");
@@ -2355,22 +2282,15 @@ async function sendPushToAllActiveDevices(title, body, data = {}) {
     const result = await admin.messaging().sendEachForMulticast({
       tokens,
       notification: {
-        title: String(title || "SMART SAFE"),
-        body: String(body || "Có cảnh báo mới"),
+        title,
+        body,
       },
       data: stringData,
     });
 
     console.log(
-      `[FCM] Sent all: success=${result.successCount}, failed=${result.failureCount}, total=${tokens.length}`
+      `[FCM] Sent all: success=${result.successCount}, failed=${result.failureCount}`
     );
-
-    result.responses.forEach((r, index) => {
-      if (!r.success) {
-        console.log("[FCM] Failed token:", tokens[index]);
-        console.log("[FCM] Error:", r.error?.message);
-      }
-    });
 
     return result;
   } catch (err) {
