@@ -2470,6 +2470,52 @@ app.post("/api/esp32/gps", async (req, res) => {
     });
   }
 });
+app.patch("/api/admin/location/config", authRequired, adminRequired, async (req, res) => {
+  try {
+    const { base_lat, base_lng, allowed_radius_m } = req.body;
+
+    if (base_lat === undefined || base_lng === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Thieu base_lat hoac base_lng",
+      });
+    }
+
+    const radius = allowed_radius_m || 50;
+
+    const values = [
+      ["safe_base_lat", String(base_lat)],
+      ["safe_base_lng", String(base_lng)],
+      ["gps_allowed_radius_m", String(radius)],
+    ];
+
+    for (const [key, value] of values) {
+      await db.query(
+        `INSERT INTO system_config(config_key, config_value)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+        [key, value]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: "Da cap nhat vi tri chuan cua ket",
+      data: {
+        base_lat,
+        base_lng,
+        allowed_radius_m: radius,
+      },
+    });
+  } catch (err) {
+    console.error("[SET LOCATION CONFIG ERROR]", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 app.post("/api/admin/location/set-current", authRequired, adminRequired, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -2532,25 +2578,31 @@ app.post("/api/admin/location/set-current", authRequired, adminRequired, async (
 app.get("/api/admin/location/config", authRequired, adminRequired, async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT *
-       FROM safe_location_config
-       WHERE id = 1`
+      `SELECT config_key, config_value
+       FROM system_config
+       WHERE config_key IN (
+         'safe_base_lat',
+         'safe_base_lng',
+         'gps_allowed_radius_m'
+       )`
     );
 
-    const [statusRows] = await db.query(
-      `SELECT gps_lat, gps_lng, gps_updated_at
-       FROM safe_status
-       WHERE id = 1`
-    );
+    const config = {};
+    for (const row of rows) {
+      config[row.config_key] = row.config_value;
+    }
 
     res.json({
       success: true,
       data: {
-        config: rows[0] || null,
-        current_gps: statusRows[0] || null,
+        base_lat: config.safe_base_lat || null,
+        base_lng: config.safe_base_lng || null,
+        allowed_radius_m: config.gps_allowed_radius_m || "50",
       },
     });
   } catch (err) {
+    console.error("[GET LOCATION CONFIG ERROR]", err);
+
     res.status(500).json({
       success: false,
       error: err.message,
