@@ -2259,9 +2259,11 @@ async function sendPushToAllActiveDevices(title, body, data = {}) {
        WHERE status = 'active'`
     );
 
-    const tokens = rows
-      .map(r => r.device_token)
-      .filter(Boolean);
+    const tokens = [...new Set(
+      rows
+        .map(r => r.device_token)
+        .filter(Boolean)
+    )];
 
     if (tokens.length === 0) {
       console.log("[FCM] No active device tokens");
@@ -2282,15 +2284,22 @@ async function sendPushToAllActiveDevices(title, body, data = {}) {
     const result = await admin.messaging().sendEachForMulticast({
       tokens,
       notification: {
-        title,
-        body,
+        title: String(title || "SMART SAFE"),
+        body: String(body || "Có cảnh báo mới"),
       },
       data: stringData,
     });
 
     console.log(
-      `[FCM] Sent all: success=${result.successCount}, failed=${result.failureCount}`
+      `[FCM] Sent all: success=${result.successCount}, failed=${result.failureCount}, total=${tokens.length}`
     );
+
+    result.responses.forEach((r, index) => {
+      if (!r.success) {
+        console.log("[FCM] Failed token:", tokens[index]);
+        console.log("[FCM] Error:", r.error?.message);
+      }
+    });
 
     return result;
   } catch (err) {
