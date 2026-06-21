@@ -382,18 +382,25 @@ async function sendPushToUser(userId, title, body, type = "SYSTEM", refId = null
 
 async function sendPushToAdmins(title, body, type = "ALARM", refId = null) {
   try {
-    const [admins] = await db.query(
-      `SELECT id
-       FROM users
-       WHERE role = 'admin'
-       AND status = 'active'`
+    console.log("[FCM] sendPushToAdmins redirected to all active devices");
+
+    const result = await sendPushToAllActiveDevices(
+      title,
+      body,
+      {
+        type,
+        ref_id: refId || "",
+      }
     );
 
-    for (const admin of admins) {
-      await sendPushToUser(admin.id, title, body, type, refId);
-    }
+    return result;
   } catch (err) {
-    console.error("[FCM SEND ADMINS ERROR]", err.message);
+    console.error("[FCM SEND ALL ERROR]", err.message);
+    return {
+      successCount: 0,
+      failureCount: 1,
+      error: err.message,
+    };
   }
 }
 // ===============================
