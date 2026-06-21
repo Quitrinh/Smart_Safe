@@ -2251,25 +2251,75 @@ app.get("/db-test", async (req, res) => {
     });
   }
 });
+async function sendPushToAllActiveDevices(title, body, data = {}) {
+  try {
+    const [rows] = await db.query(
+      `SELECT device_token
+       FROM device_tokens
+       WHERE status = 'active'`
+    );
+
+    const tokens = rows
+      .map(r => r.device_token)
+      .filter(Boolean);
+
+    if (tokens.length === 0) {
+      console.log("[FCM] No active device tokens");
+      return {
+        successCount: 0,
+        failureCount: 0,
+      };
+    }
+
+    const stringData = {};
+    for (const key of Object.keys(data)) {
+      stringData[key] =
+        data[key] === null || data[key] === undefined
+          ? ""
+          : String(data[key]);
+    }
+
+    const result = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: {
+        title,
+        body,
+      },
+      data: stringData,
+    });
+
+    console.log(
+      `[FCM] Sent all: success=${result.successCount}, failed=${result.failureCount}`
+    );
+
+    return result;
+  } catch (err) {
+    console.error("[FCM SEND ALL ERROR]", err);
+    return {
+      successCount: 0,
+      failureCount: 1,
+      error: err.message,
+    };
+  }
+}
 app.post("/api/test-push", authRequired, async (req, res) => {
   try {
-    const title = req.body.title || "Smart Safe";
-    const body = req.body.body || "Test thông báo từ backend";
-
-    await sendPushToUser(
-      req.user.id,
-      title,
-      body,
-      "TEST_PUSH",
-      null
+    const result = await sendPushToAllActiveDevices(
+      "SMART SAFE TEST",
+      "Day la thong bao test cho user",
+      {
+        type: "TEST_PUSH",
+      }
     );
 
     res.json({
       success: true,
       message: "Test push sent",
+      result,
     });
   } catch (err) {
     console.error("[TEST PUSH ERROR]", err);
+
     res.status(500).json({
       success: false,
       error: err.message,
