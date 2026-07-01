@@ -243,69 +243,7 @@ Sẵn sàng hoạt động
 
 ---
 
-# 6. Luồng mở két bằng vân tay
-
-```text
-Đặt ngón tay
-
-↓
-
-AS608 đọc ảnh
-
-↓
-
-ESP32 so khớp
-
-↓
-
-Nếu đúng
-
-↓
-
-Servo mở
-
-↓
-
-LCD hiển thị
-
-↓
-
-Buzzer kêu ngắn
-
-↓
-
-Ghi auth_logs
-
-↓
-
-Gửi API
-
-↓
-
-Database
-
-↓
-
-App cập nhật trạng thái
-
-Nếu sai
-
-↓
-
-Buzzer báo lỗi
-
-↓
-
-Tăng số lần sai
-
-↓
-
-Ghi auth_logs
-```
-
----
-
-# 7. Các phương thức mở két
+# 6. Các phương thức mở két
 
 Hệ thống hỗ trợ 2 nhóm phương thức mở két:
 
@@ -318,7 +256,7 @@ Hệ thống hỗ trợ 2 nhóm phương thức mở két:
 
 ---
 
-# 8. Luồng mở két trực tiếp tại thiết bị
+# 7. Luồng mở két trực tiếp tại thiết bị
 
 ```text
 Người dùng xác thực bằng RFID / Vân tay / Keypad
@@ -387,27 +325,70 @@ Gửi SMS / gửi cảnh báo lên App
 
 # 8. Luồng mở bằng APP
 
-Người dùng đăng nhập App
+```text
+Nhập mật khẩu
 
 ↓
 
-App gửi yêu cầu mở két
+ESP32 kiểm tra
 
 ↓
 
-API kiểm tra Token và quyền người dùng
+Đúng
 
 ↓
 
-API tạo lệnh mở két trong bảng safe_commands
+Servo mở
 
 ↓
 
-ESP32 gọi API kiểm tra lệnh mới
+Lưu auth_logs
 
 ↓
 
-ESP32 nhận lệnh UNLOCK
+API
+
+↓
+
+Database
+
+↓
+
+App
+
+Sai
+
+↓
+
+Buzzer
+
+↓
+
+Sai nhiều lần
+
+↓
+
+Chuyển sang cảnh báo
+```
+
+---
+
+# 8. Luồng mở két gián tiếp qua App
+
+```text
+Người dùng xác thực bằng RFID / Vân tay / Keypad
+
+↓
+
+ESP32 nhận dữ liệu xác thực
+
+↓
+
+ESP32 kiểm tra thông tin hợp lệ
+
+↓
+
+Nếu hợp lệ
 
 ↓
 
@@ -415,15 +396,101 @@ Servo mở chốt khóa
 
 ↓
 
-ESP32 cập nhật trạng thái két
+LCD hiển thị mở két thành công
 
 ↓
 
-API lưu vào safe_status và auth_logs
+Buzzer báo thành công
 
 ↓
 
-App hiển thị mở két thành công
+ESP32 gửi auth_logs lên API
+
+↓
+
+API lưu vào Database
+
+↓
+
+App cập nhật lịch sử mở két
+
+Nếu không hợp lệ
+
+↓
+
+Buzzer báo lỗi
+
+↓
+
+Tăng số lần xác thực sai
+
+↓
+
+Lưu auth_logs thất bại
+
+↓
+
+Nếu sai quá số lần cho phép
+
+↓
+
+Chuyển sang trạng thái cảnh báo
+
+↓
+
+Gửi SMS / gửi cảnh báo lên App
+
+# 8. Luồng mở bằng APP
+
+```text
+Nhập mật khẩu
+
+↓
+
+ESP32 kiểm tra
+
+↓
+
+Đúng
+
+↓
+
+Servo mở
+
+↓
+
+Lưu auth_logs
+
+↓
+
+API
+
+↓
+
+Database
+
+↓
+
+App
+
+Sai
+
+↓
+
+Buzzer
+
+↓
+
+Sai nhiều lần
+
+↓
+
+Chuyển sang cảnh báo
+```
+
+---
+
+---
 
 # 9. Luồng chống trộm
 
