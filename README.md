@@ -331,71 +331,48 @@ Gửi SMS / gửi cảnh báo lên App
 # 8. Luồng mở két gián tiếp qua App
 
 ```text
-Người dùng xác thực bằng RFID / Vân tay / Keypad
-
-↓
-
-ESP32 nhận dữ liệu xác thực
-
-↓
-
-ESP32 kiểm tra thông tin hợp lệ
-
-↓
-
-Nếu hợp lệ
-
-↓
-
-Servo mở chốt khóa
-
-↓
-
-LCD hiển thị mở két thành công
-
-↓
-
-Buzzer báo thành công
-
-↓
-
-ESP32 gửi auth_logs lên API
-
-↓
-
-API lưu vào Database
-
-↓
-
-App cập nhật lịch sử mở két
-
-Nếu không hợp lệ
-
-↓
-
-Buzzer báo lỗi
-
-↓
-
-Tăng số lần xác thực sai
-
-↓
-
-Lưu auth_logs thất bại
-
-↓
-
-Nếu sai quá số lần cho phép
-
-↓
-
-Chuyển sang trạng thái cảnh báo
-
-↓
-
-Gửi SMS / gửi cảnh báo lên App
-
-
+┌───────────────────────┐
+│ Người dùng đăng nhập  │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ App gửi yêu cầu mở két│
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ API xác thực JWT      │
+│ và kiểm tra quyền     │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ Tạo lệnh UNLOCK       │
+│ trong safe_commands   │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ ESP32 nhận lệnh       │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ Servo mở khóa         │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ Cập nhật Database     │
+│ safe_status           │
+│ auth_logs             │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ App hiển thị thành công│
+└───────────────────────┘
 ```
 
 ---
