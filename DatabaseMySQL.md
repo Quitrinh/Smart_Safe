@@ -1,13 +1,24 @@
--- 1. Xem tất cả database
+# MYSQL COMMANDS - SMART SAFE DATABASE
+
+> Database sử dụng: `smart_safe_db`
+
+---
+
+## 1. Kiểm tra database và bảng
+
+```sql
 SHOW DATABASES;
 
--- 2. Chọn database đồ án
 USE smart_safe_db;
 
--- 3. Xem tất cả bảng
 SHOW TABLES;
+```
 
--- 4. Xem cấu trúc từng bảng
+---
+
+## 2. Xem cấu trúc tất cả bảng
+
+```sql
 DESCRIBE users;
 DESCRIBE auth_methods;
 DESCRIBE auth_logs;
@@ -24,8 +35,13 @@ DESCRIBE sms_outbox;
 DESCRIBE sms_receivers;
 DESCRIBE sms_recipients;
 DESCRIBE system_config;
+```
 
--- 5. Xem dữ liệu từng bảng
+---
+
+## 3. Xem dữ liệu tất cả bảng
+
+```sql
 SELECT * FROM users;
 SELECT * FROM auth_methods;
 SELECT * FROM auth_logs;
@@ -42,144 +58,271 @@ SELECT * FROM sms_outbox;
 SELECT * FROM sms_receivers;
 SELECT * FROM sms_recipients;
 SELECT * FROM system_config;
+```
 
--- 6. Đếm số dòng trong từng bảng
-SELECT COUNT(*) FROM users;
-SELECT COUNT(*) FROM auth_logs;
-SELECT COUNT(*) FROM events;
-SELECT COUNT(*) FROM notifications;
-SELECT COUNT(*) FROM safe_commands;
-SELECT COUNT(*) FROM safe_status;
-SELECT COUNT(*) FROM sms_outbox;
+---
 
--- 7. Xem lịch sử cảnh báo mới nhất
+## 4. Đếm số dòng dữ liệu
+
+```sql
+SELECT COUNT(*) AS total_users FROM users;
+SELECT COUNT(*) AS total_auth_logs FROM auth_logs;
+SELECT COUNT(*) AS total_events FROM events;
+SELECT COUNT(*) AS total_notifications FROM notifications;
+SELECT COUNT(*) AS total_commands FROM safe_commands;
+SELECT COUNT(*) AS total_status FROM safe_status;
+SELECT COUNT(*) AS total_sms FROM sms_outbox;
+```
+
+---
+
+## 5. Truy vấn dữ liệu quan trọng
+
+### Lịch sử cảnh báo mới nhất
+
+```sql
 SELECT *
 FROM events
 ORDER BY created_at DESC
 LIMIT 20;
+```
 
--- 8. Xem lịch sử xác thực mới nhất
+### Lịch sử xác thực mới nhất
+
+```sql
 SELECT *
 FROM auth_logs
 ORDER BY created_at DESC
 LIMIT 20;
+```
 
--- 9. Xem trạng thái két hiện tại
+### Trạng thái két hiện tại
+
+```sql
 SELECT *
 FROM safe_status
 ORDER BY updated_at DESC
 LIMIT 1;
+```
 
--- 10. Xem lệnh mở két chưa xử lý
+### Lệnh mở két chưa xử lý
+
+```sql
 SELECT *
 FROM safe_commands
 WHERE status = 'PENDING'
 ORDER BY created_at ASC;
+```
 
--- 11. Thêm sự kiện cảnh báo rung
+---
+
+## 6. Thêm dữ liệu test
+
+### Thêm cảnh báo rung
+
+```sql
 INSERT INTO events (safe_id, event_type, message, created_at)
 VALUES ('SAFE001', 'VIBRATION', 'Phát hiện rung động mạnh', NOW());
+```
 
--- 12. Thêm sự kiện cửa mở trái phép
+### Thêm cảnh báo cửa mở trái phép
+
+```sql
 INSERT INTO events (safe_id, event_type, message, created_at)
 VALUES ('SAFE001', 'DOOR_OPEN', 'Phát hiện cửa mở trái phép', NOW());
+```
 
--- 13. Thêm log xác thực thành công
+### Thêm log xác thực thành công
+
+```sql
 INSERT INTO auth_logs (user_id, method, status, message, created_at)
 VALUES (1, 'FINGERPRINT', 'SUCCESS', 'Mở két bằng vân tay thành công', NOW());
+```
 
--- 14. Thêm log xác thực thất bại
+### Thêm log xác thực thất bại
+
+```sql
 INSERT INTO auth_logs (user_id, method, status, message, created_at)
 VALUES (1, 'PASSWORD', 'FAILED', 'Nhập sai mật khẩu', NOW());
+```
 
--- 15. Thêm lệnh mở két từ app
+### Thêm lệnh mở két từ App
+
+```sql
 INSERT INTO safe_commands (safe_id, command, status, created_at)
 VALUES ('SAFE001', 'UNLOCK', 'PENDING', NOW());
+```
 
--- 16. ESP32 cập nhật lệnh đã xử lý
+---
+
+## 7. Cập nhật dữ liệu
+
+### ESP32 cập nhật lệnh đã xử lý
+
+```sql
 UPDATE safe_commands
-SET status = 'DONE', executed_at = NOW()
+SET status = 'DONE',
+    executed_at = NOW()
 WHERE id = 1;
+```
 
--- 17. Cập nhật trạng thái két đang khóa
+### Cập nhật két đang khóa
+
+```sql
 UPDATE safe_status
 SET lock_state = 'LOCKED',
     alarm_state = 'OFF',
     updated_at = NOW()
 WHERE safe_id = 'SAFE001';
+```
 
--- 18. Cập nhật trạng thái két đang mở
+### Cập nhật két đang mở
+
+```sql
 UPDATE safe_status
 SET lock_state = 'UNLOCKED',
     updated_at = NOW()
 WHERE safe_id = 'SAFE001';
+```
 
--- 19. Cập nhật trạng thái cảnh báo
+### Bật cảnh báo
+
+```sql
 UPDATE safe_status
 SET alarm_state = 'ON',
     updated_at = NOW()
 WHERE safe_id = 'SAFE001';
+```
 
--- 20. Tắt cảnh báo
+### Tắt cảnh báo
+
+```sql
 UPDATE safe_status
 SET alarm_state = 'OFF',
     updated_at = NOW()
 WHERE safe_id = 'SAFE001';
+```
 
--- 21. Xem danh sách SMS đã gửi/chờ gửi
+---
+
+## 8. SMS
+
+### Xem danh sách SMS
+
+```sql
 SELECT *
 FROM sms_outbox
 ORDER BY created_at DESC
 LIMIT 20;
+```
 
--- 22. Thêm SMS cảnh báo vào hàng chờ
+### Thêm SMS cảnh báo
+
+```sql
 INSERT INTO sms_outbox (phone_number, message, status, created_at)
 VALUES ('0900000000', 'Canh bao: Ket sat phat hien rung dong!', 'PENDING', NOW());
+```
 
--- 23. Cập nhật SMS đã gửi
+### Cập nhật SMS đã gửi
+
+```sql
 UPDATE sms_outbox
-SET status = 'SENT', sent_at = NOW()
+SET status = 'SENT',
+    sent_at = NOW()
 WHERE id = 1;
+```
 
--- 24. Xem người nhận SMS
+### Xem người nhận SMS
+
+```sql
 SELECT * FROM sms_recipients;
 SELECT * FROM sms_receivers;
+```
 
--- 25. Thêm người nhận SMS
+### Thêm người nhận SMS
+
+```sql
 INSERT INTO sms_recipients (name, phone_number, is_active, created_at)
 VALUES ('Chu so huu', '0900000000', 1, NOW());
+```
 
--- 26. Xem OTP còn hiệu lực
+---
+
+## 9. OTP và người dùng
+
+### Xem OTP còn hiệu lực
+
+```sql
 SELECT *
 FROM otp_codes
 WHERE is_used = 0
-AND expired_at > NOW();
+  AND expired_at > NOW();
+```
 
--- 27. Đánh dấu OTP đã dùng
+### Đánh dấu OTP đã dùng
+
+```sql
 UPDATE otp_codes
 SET is_used = 1
 WHERE id = 1;
+```
 
--- 28. Xem user
+### Xem danh sách user
+
+```sql
 SELECT id, username, email, role, created_at
 FROM users;
+```
 
--- 29. Khóa tài khoản user
+### Khóa tài khoản
+
+```sql
 UPDATE users
 SET status = 'LOCKED'
 WHERE id = 1;
+```
 
--- 30. Mở khóa tài khoản user
+### Mở khóa tài khoản
+
+```sql
 UPDATE users
 SET status = 'ACTIVE'
 WHERE id = 1;
+```
 
--- 31. Xóa dữ liệu test trong events
+---
+
+## 10. Xóa dữ liệu test
+
+> Cẩn thận trước khi chạy lệnh xóa.
+
+### Xóa dữ liệu test trong events
+
+```sql
 DELETE FROM events
 WHERE safe_id = 'SAFE001'
-AND event_type = 'TEST';
+  AND event_type = 'TEST';
+```
 
--- 32. Xóa toàn bộ dữ liệu trong bảng test/log
+### Xóa toàn bộ dữ liệu log/test
+
+```sql
 TRUNCATE TABLE events;
 TRUNCATE TABLE auth_logs;
 TRUNCATE TABLE notifications;
+```
+
+---
+
+## 11. Ghi chú khi bảo vệ đồ án
+
+- `users`: quản lý tài khoản người dùng.
+- `auth_methods`: lưu phương thức xác thực như RFID, vân tay, mật khẩu.
+- `auth_logs`: lưu lịch sử xác thực.
+- `events`: lưu sự kiện cảnh báo.
+- `notifications`: lưu thông báo gửi lên App.
+- `safe_status`: lưu trạng thái hiện tại của két.
+- `safe_commands`: lưu lệnh điều khiển từ App.
+- `sms_outbox`: lưu lịch sử SMS.
+- `otp_codes`: lưu mã OTP.
+- `system_config`: lưu cấu hình hệ thống.
