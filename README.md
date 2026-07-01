@@ -323,52 +323,7 @@ Chuyển sang trạng thái cảnh báo
 
 Gửi SMS / gửi cảnh báo lên App
 
-# 8. Luồng mở bằng APP
 
-```text
-Nhập mật khẩu
-
-↓
-
-ESP32 kiểm tra
-
-↓
-
-Đúng
-
-↓
-
-Servo mở
-
-↓
-
-Lưu auth_logs
-
-↓
-
-API
-
-↓
-
-Database
-
-↓
-
-App
-
-Sai
-
-↓
-
-Buzzer
-
-↓
-
-Sai nhiều lần
-
-↓
-
-Chuyển sang cảnh báo
 ```
 
 ---
@@ -440,52 +395,7 @@ Chuyển sang trạng thái cảnh báo
 
 Gửi SMS / gửi cảnh báo lên App
 
-# 8. Luồng mở bằng APP
 
-```text
-Nhập mật khẩu
-
-↓
-
-ESP32 kiểm tra
-
-↓
-
-Đúng
-
-↓
-
-Servo mở
-
-↓
-
-Lưu auth_logs
-
-↓
-
-API
-
-↓
-
-Database
-
-↓
-
-App
-
-Sai
-
-↓
-
-Buzzer
-
-↓
-
-Sai nhiều lần
-
-↓
-
-Chuyển sang cảnh báo
 ```
 
 ---
