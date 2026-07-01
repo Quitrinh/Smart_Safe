@@ -7,7 +7,7 @@
 ## 1. Base URL
 
 ```text
-[https://smart-safe-api.azurewebsites.net](http://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net]
+https://smart-safe-api.azurewebsites.net](http://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net
 ```
 
 ---
