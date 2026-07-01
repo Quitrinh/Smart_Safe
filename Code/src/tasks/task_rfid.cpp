@@ -1,6 +1,7 @@
 // =====================================================
 // task_rfid.cpp
 // RFID CHECK BACKEND + WAIT REMOVE AFTER ENROLL
+// FIX: không chen LCD/RFID khi đang ADD_FINGER
 // =====================================================
 
 #include <Arduino.h>
@@ -22,6 +23,7 @@ extern String lcdLine2;
 extern unsigned long lcdMessageTime;
 
 extern bool checkAuthFromBackend(String methodType, String methodValue);
+extern bool backendFingerBusy;
 
 String masterUID = "23de1907";
 
@@ -40,6 +42,7 @@ bool isUserCard(String uid)
             return true;
         }
     }
+
     return false;
 }
 
@@ -147,6 +150,8 @@ String waitRFIDCardFromRC522(uint32_t timeoutMs)
 
     while (millis() - start < timeoutMs)
     {
+        showLCDMessage("ADD RFID", "SCAN CARD");
+
         if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial())
         {
             String uid = readRFIDUID();
@@ -180,7 +185,7 @@ String waitRFIDCardFromRC522(uint32_t timeoutMs)
             return uid;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
     backendRFIDBusy = false;
@@ -204,14 +209,18 @@ void taskRFID(void *pv)
 
     while (1)
     {
-        // Khi đang ADD_RFID từ app thì task thường không xử lý login
+        if (backendFingerBusy)
+        {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
         if (backendRFIDBusy)
         {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
-        // Sau khi ADD_RFID xong, bắt buộc nhấc thẻ ra
         if (waitRemoveAfterEnroll)
         {
             resetAuthState();
@@ -253,7 +262,6 @@ void taskRFID(void *pv)
         Serial.print("CARD UID: ");
         Serial.println(uid);
 
-        // ADD MODE LOCAL
         if (currentRFIDMode == RFID_MODE_ADD)
         {
             addCard(uid);
@@ -269,7 +277,6 @@ void taskRFID(void *pv)
             continue;
         }
 
-        // DELETE MODE LOCAL
         if (currentRFIDMode == RFID_MODE_DELETE)
         {
             deleteCard(uid);
@@ -285,7 +292,6 @@ void taskRFID(void *pv)
             continue;
         }
 
-        // MASTER CARD
         if (uid == masterUID)
         {
             Serial.println("MASTER CARD");
@@ -298,8 +304,6 @@ void taskRFID(void *pv)
 
             buzzerBeep(3000, 200);
         }
-
-        // USER CARD - CHECK BACKEND
         else if (checkAuthFromBackend("RFID", uid))
         {
             Serial.println("USER CARD OK FROM BACKEND");
@@ -319,7 +323,6 @@ void taskRFID(void *pv)
 
             xEventGroupClearBits(
                 systemEvents,
-                BIT_ALARM_ACTIVE |
                 BIT_NEED_GPS |
                 BIT_TRACKING_MODE
             );
@@ -329,8 +332,6 @@ void taskRFID(void *pv)
             buzzerBeep(2500, 150);
             ledPulse(LED_MODE_GREEN, 300);
         }
-
-        // INVALID CARD
         else
         {
             Serial.println("INVALID CARD FROM BACKEND");

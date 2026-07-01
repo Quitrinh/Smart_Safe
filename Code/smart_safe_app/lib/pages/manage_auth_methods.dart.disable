@@ -1,0 +1,107 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+class ManageAuthMethodsPage extends StatefulWidget {
+  const ManageAuthMethodsPage({super.key});
+
+  @override
+  State<ManageAuthMethodsPage> createState() => _ManageAuthMethodsPageState();
+}
+
+class _ManageAuthMethodsPageState extends State<ManageAuthMethodsPage> {
+  List<dynamic> authMethods = [];
+  bool loading = true;
+
+  final String baseUrl = "https://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
+
+  @override
+  void initState() {
+    super.initState();
+    fetchAuthMethods();
+  }
+
+  Future<void> fetchAuthMethods() async {
+    setState(() => loading = true);
+    try {
+      final res = await http.get(Uri.parse("$baseUrl/api/auth-methods"));
+      final data = json.decode(res.body);
+      if (data["success"] == true) {
+        setState(() {
+          authMethods = data["data"];
+        });
+      }
+    } catch (e) {
+      print("Error fetching auth methods: $e");
+    } finally {
+      setState(() => loading = false);
+    }
+  }
+
+  Future<void> removeAuthMethod(String methodType, String methodValue) async {
+    try {
+      final res = await http.post(
+        Uri.parse("$baseUrl/api/auth-methods/remove"),
+        headers: {"Content-Type": "application/json"},
+        body: json.encode({
+          "method_type": methodType,
+          "method_value": methodValue,
+        }),
+      );
+      final data = json.decode(res.body);
+      if (data["success"] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("${methodType} removed successfully"))
+        );
+        await fetchAuthMethods(); // refresh list
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to remove: ${data["message"]}"))
+        );
+      }
+    } catch (e) {
+      print("Error removing auth method: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Error removing auth method"))
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Manage Auth Methods")),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              itemCount: authMethods.length,
+              itemBuilder: (context, index) {
+                final item = authMethods[index];
+                return ListTile(
+                  title: Text("${item["user_name"]}"),
+                  subtitle: Text("${item["method_type"]} : ${item["method_value"]}"),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text("Confirm Remove"),
+                          content: Text("Remove ${item["method_type"]} for ${item["user_name"]}?"),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+                            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Remove")),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        removeAuthMethod(item["method_type"], item["method_value"]);
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}

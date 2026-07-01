@@ -1,6 +1,6 @@
 // =====================================================
 // task_sim.cpp
-// SMS MULTI PHONE + WIFI EVENT LOG VERSION
+// SMART SAFE - SMS MULTI PHONE + SMS OUTBOX OTP VERSION
 // =====================================================
 
 #include <Arduino.h>
@@ -22,25 +22,57 @@ HardwareSerial simSerial(1);
 // =====================================================
 // BACKEND
 // =====================================================
-String eventBackendUrl = "http://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
+String eventBackendUrl =
+    "http://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
 
 // =====================================================
-// SMS PHONE LIST
+// SMS PHONE LIST FROM BACKEND
 // =====================================================
-String smsPhones[] =
-{
-    "+84986831371"
-};
+#define MAX_SMS_PHONES 10
 
-const int SMS_PHONE_COUNT =
-    sizeof(smsPhones) /
-    sizeof(smsPhones[0]);
+String smsPhones[MAX_SMS_PHONES];
+int smsPhoneCount = 0;
+bool simWaitFor(String expected, int timeout);
+// =====================================================
+// TIME CONFIG
+// =====================================================
+#define SMS_RECIPIENT_FETCH_INTERVAL 300000
+#define SMS_OUTBOX_CHECK_INTERVAL    1000
+#define SMS_SEND_DELAY               3000
+#define SMS_DUPLICATE_DELAY          3000
 
 // =====================================================
 // LAST EVENT
 // =====================================================
 EventType lastEventType = EVENT_ALARM_OFF;
 unsigned long lastEventTime = 0;
+
+// =====================================================
+// NORMALIZE PHONE
+// =====================================================
+String normalizePhoneForSMS(String phone)
+{
+    phone.trim();
+    phone.replace(" ", "");
+    phone.replace("-", "");
+
+    if (phone.startsWith("+84"))
+    {
+        return phone;
+    }
+
+    if (phone.startsWith("84"))
+    {
+        return "+" + phone;
+    }
+
+    if (phone.startsWith("0"))
+    {
+        return "+84" + phone.substring(1);
+    }
+
+    return phone;
+}
 
 // =====================================================
 // INIT SIM
@@ -58,6 +90,23 @@ void simInit()
 
     Serial.println();
     Serial.println("=================================");
+    Serial.println("[SIM] INIT START");
+
+    simSerial.println("AT");
+    simWaitFor("OK", 3000);
+
+    // Tắt echo để phản hồi gọn hơn
+    simSerial.println("ATE0");
+    simWaitFor("OK", 3000);
+
+    // SMS text mode
+    simSerial.println("AT+CMGF=1");
+    simWaitFor("OK", 3000);
+
+    // Dùng GSM charset, nội dung nên không dấu
+    simSerial.println("AT+CSCS=\"GSM\"");
+    simWaitFor("OK", 3000);
+
     Serial.println("[SIM] INIT DONE");
 }
 
@@ -83,7 +132,7 @@ bool simWaitFor(String expected, int timeout)
             }
         }
 
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     return false;
@@ -94,48 +143,48 @@ bool simWaitFor(String expected, int timeout)
 // =====================================================
 bool sendSMS(String phone, String message)
 {
+    phone = normalizePhoneForSMS(phone);
+
     Serial.println();
     Serial.println("=================================");
     Serial.print("[SMS] SEND TO: ");
     Serial.println(phone);
+
+    if (phone.length() <= 5)
+    {
+        Serial.println("[SMS] INVALID PHONE");
+        return false;
+    }
 
     while (simSerial.available())
     {
         simSerial.read();
     }
 
+    // Kiểm tra SIM còn phản hồi không
     simSerial.println("AT");
-    if (!simWaitFor("OK", 3000))
+    if (!simWaitFor("OK", 2000))
     {
         Serial.println("[SMS] AT FAIL");
         return false;
     }
 
-    simSerial.println("AT+CMGF=1");
-    if (!simWaitFor("OK", 3000))
-    {
-        Serial.println("[SMS] CMGF FAIL");
-        return false;
-    }
-
-    simSerial.println("AT+CSCS=\"GSM\"");
-    simWaitFor("OK", 3000);
-
     simSerial.print("AT+CMGS=\"");
     simSerial.print(phone);
     simSerial.println("\"");
 
-    if (!simWaitFor(">", 7000))
+    if (!simWaitFor(">", 5000))
     {
         Serial.println("[SMS] NO > PROMPT");
         return false;
     }
 
     simSerial.print(message);
-    delay(500);
+    delay(200);
     simSerial.write(26);
 
-    if (!simWaitFor("OK", 20000))
+    // Chờ gửi thành công
+    if (!simWaitFor("OK", 15000))
     {
         Serial.println("[SMS] SEND FAIL");
         return false;
@@ -144,19 +193,111 @@ bool sendSMS(String phone, String message)
     Serial.println("[SMS] SEND OK");
     return true;
 }
+// =====================================================
+// FETCH SMS RECIPIENTS FROM BACKEND
+// =====================================================
+bool fetchSmsRecipients()
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.println("[SMS RECIPIENTS] WIFI NOT CONNECTED");
+        return false;
+    }
+
+    HTTPClient http;
+
+    String url =
+        eventBackendUrl +
+        "/api/esp32/sms-recipients";
+
+    http.begin(url);
+
+    int code = http.GET();
+
+    Serial.print("[SMS RECIPIENTS] HTTP CODE = ");
+    Serial.println(code);
+
+    if (code != 200)
+    {
+        http.end();
+        return false;
+    }
+
+    String payload = http.getString();
+
+    Serial.print("[SMS RECIPIENTS] BODY = ");
+    Serial.println(payload);
+
+    JsonDocument doc;
+
+    DeserializationError error =
+        deserializeJson(doc, payload);
+
+    if (error)
+    {
+        Serial.print("[SMS RECIPIENTS] JSON ERROR = ");
+        Serial.println(error.c_str());
+
+        http.end();
+        return false;
+    }
+
+    if (!doc["success"].as<bool>())
+    {
+        http.end();
+        return false;
+    }
+
+    JsonArray arr =
+        doc["data"].as<JsonArray>();
+
+    smsPhoneCount = 0;
+
+    for (JsonObject item : arr)
+    {
+        if (smsPhoneCount >= MAX_SMS_PHONES)
+        {
+            break;
+        }
+
+        String phone =
+            item["phone"] | "";
+
+        phone =
+            normalizePhoneForSMS(phone);
+
+        if (phone.length() > 5)
+        {
+            smsPhones[smsPhoneCount] = phone;
+            smsPhoneCount++;
+        }
+    }
+
+    Serial.print("[SMS RECIPIENTS] COUNT = ");
+    Serial.println(smsPhoneCount);
+
+    http.end();
+    return true;
+}
 
 // =====================================================
-// SEND SMS TO ALL PHONES
+// SEND SMS TO ALL RECIPIENTS
 // =====================================================
 void sendSMSAll(String message)
 {
-    if (xSemaphoreTake(simMutex, 5000 / portTICK_PERIOD_MS) != pdTRUE)
+    if (smsPhoneCount <= 0)
+    {
+        Serial.println("[SMS] NO RECIPIENTS");
+        return;
+    }
+
+    if (xSemaphoreTake(simMutex, pdMS_TO_TICKS(5000)) != pdTRUE)
     {
         Serial.println("[SMS] MUTEX FAIL");
         return;
     }
 
-    for (int i = 0; i < SMS_PHONE_COUNT; i++)
+    for (int i = 0; i < smsPhoneCount; i++)
     {
         if (smsPhones[i].length() > 5)
         {
@@ -166,12 +307,169 @@ void sendSMSAll(String message)
             );
 
             vTaskDelay(
-                3000 / portTICK_PERIOD_MS
+                pdMS_TO_TICKS(SMS_SEND_DELAY)
             );
         }
     }
 
     xSemaphoreGive(simMutex);
+}
+
+// =====================================================
+// MARK SMS OUTBOX STATUS
+// status = sent hoặc failed
+// =====================================================
+void markSmsOutboxStatus(int id, String status)
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.println("[SMS OUTBOX] WIFI NOT CONNECTED");
+        return;
+    }
+
+    HTTPClient http;
+
+    String url =
+        eventBackendUrl +
+        "/api/esp32/sms-outbox/" +
+        String(id) +
+        "/" +
+        status;
+
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+
+    int code =
+        http.PATCH("{}");
+
+    Serial.print("[SMS OUTBOX] MARK ");
+    Serial.print(status);
+    Serial.print(" CODE = ");
+    Serial.println(code);
+
+    http.end();
+}
+
+// =====================================================
+// PROCESS SMS OUTBOX OTP / PENDING SMS
+// =====================================================
+void processSmsOutbox()
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        return;
+    }
+
+    HTTPClient http;
+
+    String url =
+        eventBackendUrl +
+        "/api/esp32/sms-outbox/next";
+
+    http.begin(url);
+
+    int code =
+        http.GET();
+
+    if (code != 200)
+    {
+        http.end();
+        return;
+    }
+
+    String payload =
+        http.getString();
+
+    JsonDocument doc;
+
+    DeserializationError error =
+        deserializeJson(doc, payload);
+
+    if (error)
+    {
+        Serial.print("[SMS OUTBOX] JSON ERROR = ");
+        Serial.println(error.c_str());
+
+        http.end();
+        return;
+    }
+
+    if (!doc["success"].as<bool>())
+    {
+        http.end();
+        return;
+    }
+
+    if (doc["data"].isNull())
+    {
+        http.end();
+        return;
+    }
+
+    int id =
+        doc["data"]["id"] | 0;
+
+    String phone =
+        doc["data"]["phone"] | "";
+
+    String message =
+        doc["data"]["message"] | "";
+
+    phone =
+        normalizePhoneForSMS(phone);
+
+    http.end();
+
+    if (
+        id <= 0 ||
+        phone.length() <= 5 ||
+        message.length() == 0
+    )
+    {
+        return;
+    }
+
+    Serial.println();
+    Serial.println("=================================");
+    Serial.println("[SMS OUTBOX] SEND PENDING SMS");
+    Serial.print("ID: ");
+    Serial.println(id);
+    Serial.print("PHONE: ");
+    Serial.println(phone);
+    Serial.println("MESSAGE:");
+    Serial.println(message);
+
+    bool ok = false;
+
+    if (xSemaphoreTake(simMutex, pdMS_TO_TICKS(5000)) == pdTRUE)
+    {
+        ok =
+            sendSMS(
+                phone,
+                message
+            );
+
+        xSemaphoreGive(simMutex);
+    }
+    else
+    {
+        Serial.println("[SMS OUTBOX] MUTEX FAIL");
+    }
+
+    if (ok)
+    {
+        markSmsOutboxStatus(
+            id,
+            "sent"
+        );
+    }
+    else
+    {
+        markSmsOutboxStatus(
+            id,
+            "failed"
+        );
+    }
 }
 
 // =====================================================
@@ -268,19 +566,25 @@ void appendGPS(String &msg)
     msg += String(gpsLng, 6);
 }
 
+// =====================================================
+// HANDLE SIM EVENT
+// =====================================================
 void handleSIMEvent(SystemEvent event)
 {
     if (event.type == lastEventType)
     {
-        if (millis() - lastEventTime < 3000)
+        if (millis() - lastEventTime < SMS_DUPLICATE_DELAY)
         {
             Serial.println("[SIM] DUPLICATE EVENT");
             return;
         }
     }
 
-    lastEventType = event.type;
-    lastEventTime = millis();
+    lastEventType =
+        event.type;
+
+    lastEventTime =
+        millis();
 
     String msg = "";
     String eventName = "";
@@ -363,12 +667,18 @@ void handleSIMEvent(SystemEvent event)
     Serial.println(eventName);
     Serial.println(msg);
 
-    sendBackendEventWiFi(eventName, msg);
+    sendBackendEventWiFi(
+        eventName,
+        msg
+    );
 
     Serial.println("[SIM] SEND SMS TO ALL");
+
     sendSMSAll(msg);
 
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(
+        pdMS_TO_TICKS(1000)
+    );
 }
 
 // =====================================================
@@ -377,42 +687,71 @@ void handleSIMEvent(SystemEvent event)
 void taskSIM(void *pv)
 {
     simInit();
+
     simSerial.println("AT+CSQ");
     simWaitFor("OK", 3000);
 
     simSerial.println("AT+CREG?");
     simWaitFor("OK", 3000);
+
     vTaskDelay(
-        3000 / portTICK_PERIOD_MS
+        pdMS_TO_TICKS(3000)
     );
 
-    sendSMSAll(
-        "SMART SAFE ONLINE"
-    );
+    fetchSmsRecipients();
+
+    // sendSMSAll(
+    //     "SMART SAFE ONLINE"
+    // );
 
     SystemEvent event;
 
-    while (1)
+    unsigned long lastFetchRecipients = 0;
+    unsigned long lastCheckOutbox = 0;
+while (1)
+{
+    // Kiểm tra OTP / SMS pending mỗi 1 giây
+    if (
+        millis() - lastCheckOutbox >
+        SMS_OUTBOX_CHECK_INTERVAL
+    )
     {
-        if (
-            xQueueReceive(
-                systemQueue,
-                &event,
-                portMAX_DELAY
-            )
-        )
-        {
-            Serial.println();
-            Serial.println("=================================");
-            Serial.println("[SIM] EVENT RECEIVED");
+        lastCheckOutbox =
+            millis();
 
-            handleSIMEvent(
-                event
-            );
-        }
-
-        vTaskDelay(
-            50 / portTICK_PERIOD_MS
-        );
+        processSmsOutbox();
     }
+
+    // Nhận event cảnh báo từ các task khác
+    if (
+        xQueueReceive(
+            systemQueue,
+            &event,
+            pdMS_TO_TICKS(200)
+        )
+    )
+    {
+        Serial.println();
+        Serial.println("=================================");
+        Serial.println("[SIM] EVENT RECEIVED");
+
+        handleSIMEvent(event);
+    }
+
+    // Cập nhật danh sách số nhận SMS mỗi 5 phút
+    if (
+        millis() - lastFetchRecipients >
+        SMS_RECIPIENT_FETCH_INTERVAL
+    )
+    {
+        lastFetchRecipients =
+            millis();
+
+        fetchSmsRecipients();
+    }
+
+    vTaskDelay(
+        pdMS_TO_TICKS(50)
+    );
+}
 }

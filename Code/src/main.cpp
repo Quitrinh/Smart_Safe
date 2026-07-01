@@ -178,7 +178,7 @@ void setup()
     // ======================================
     createTask(taskSIM,         "SIM",         8192, 2, 0);
 
-    createTask(taskConfigSync,  "ConfigSync",  8192, 2, 0);
+    //FcreateTask(taskConfigSync,  "ConfigSync",  8192, 2, 0);
     createTask(taskStatusSync,  "StatusSync",  8192, 2, 0);
     createTask(taskBackendCommand, "BackendCmd", 8192, 2, 0);
 

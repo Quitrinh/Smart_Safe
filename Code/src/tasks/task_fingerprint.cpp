@@ -1,6 +1,10 @@
 // =====================================================
 // task_fingerprint.cpp
 // AS608/R305 - CHECK BACKEND + BACKEND ENROLL VERSION
+// FIX:
+// - Không quét lặp lần 2 sau khi quét đúng
+// - Sau OK/FAIL đều chờ nhấc tay ra
+// - Add vân tay tìm ID trống thật sự, không dùng templateCount + 1
 // =====================================================
 
 #include <Arduino.h>
@@ -37,6 +41,58 @@ extern unsigned long lcdMessageTime;
 bool backendFingerBusy = false;
 
 // =====================================================
+// SCAN CONTROL
+// =====================================================
+unsigned long lastFingerScanTime = 0;
+const uint32_t FINGER_SCAN_COOLDOWN_MS = 1200;
+
+// =====================================================
+// WAIT FINGER REMOVED
+// Tránh quét lại cùng 1 ngón liên tục
+// =====================================================
+void waitFingerRemoved(uint32_t timeoutMs)
+{
+    unsigned long start = millis();
+
+    while (millis() - start < timeoutMs)
+    {
+        uint8_t p = finger.getImage();
+
+        if (p == FINGERPRINT_NOFINGER)
+        {
+            Serial.println("[FINGER] FINGER REMOVED");
+            return;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    Serial.println("[FINGER] WAIT REMOVE TIMEOUT");
+}
+
+// =====================================================
+// FIND FREE FINGERPRINT ID
+// Không dùng templateCount + 1 nữa
+// =====================================================
+int findFreeFingerprintId()
+{
+    for (int id = 1; id <= 127; id++)
+    {
+        uint8_t p = finger.loadModel(id);
+
+        if (p != FINGERPRINT_OK)
+        {
+            Serial.print("[FINGER ENROLL] FREE ID = ");
+            Serial.println(id);
+            return id;
+        }
+    }
+
+    Serial.println("[FINGER ENROLL] NO FREE ID");
+    return -1;
+}
+
+// =====================================================
 // SETUP SENSOR
 // =====================================================
 void setupFingerprintSensor()
@@ -65,6 +121,10 @@ void setupFingerprintSensor()
 // =====================================================
 // CHECK FINGERPRINT LOCAL SENSOR
 // Chỉ nhận dạng trong module AS608, chưa xác thực database
+// Return:
+// -1 = không có ngón tay
+//  0 = có ngón nhưng fail
+// >0 = ID vân tay nhận dạng được
 // =====================================================
 int checkFingerprint()
 {
@@ -82,7 +142,7 @@ int checkFingerprint()
         return 0;
     }
 
-    p = finger.image2Tz();
+    p = finger.image2Tz(1);
 
     if (p != FINGERPRINT_OK)
     {
@@ -133,16 +193,9 @@ int enrollFingerprintFromAS608(uint32_t timeoutMs)
         return -1;
     }
 
-    finger.getTemplateCount();
+    int id = findFreeFingerprintId();
 
-    int id = finger.templateCount + 1;
-
-    if (id < 1)
-    {
-        id = 1;
-    }
-
-    if (id > 127)
+    if (id <= 0)
     {
         Serial.println("[FINGER ENROLL] MEMORY FULL");
 
@@ -161,6 +214,9 @@ int enrollFingerprintFromAS608(uint32_t timeoutMs)
 
     int p = -1;
 
+    // =========================
+    // LAN 1
+    // =========================
     while (millis() - start < timeoutMs)
     {
         p = finger.getImage();
@@ -195,13 +251,13 @@ int enrollFingerprintFromAS608(uint32_t timeoutMs)
     lcdLine2 = "";
     lcdMessageTime = millis();
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    waitFingerRemoved(8000);
 
-    while (finger.getImage() != FINGERPRINT_NOFINGER)
-    {
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+    vTaskDelay(pdMS_TO_TICKS(500));
 
+    // =========================
+    // LAN 2
+    // =========================
     lcdLine1 = "PLACE AGAIN";
     lcdLine2 = "LAN 2";
     lcdMessageTime = millis();
@@ -268,6 +324,9 @@ int enrollFingerprintFromAS608(uint32_t timeoutMs)
     buzzerBeep(3000, 200);
     ledPulse(LED_MODE_GREEN, 500);
 
+    // Chờ nhấc tay ra để taskFingerprint không quét lại ngay
+    waitFingerRemoved(8000);
+
     backendFingerBusy = false;
 
     return id;
@@ -282,6 +341,7 @@ void taskFingerprint(void *pv)
 
     while (1)
     {
+        // Đang add vân tay từ backend thì không scan mở két
         if (backendFingerBusy)
         {
             vTaskDelay(pdMS_TO_TICKS(100));
@@ -294,6 +354,14 @@ void taskFingerprint(void *pv)
             continue;
         }
 
+        // Nếu đã xác thực vân tay OK rồi thì không quét nữa
+        // Tránh tình trạng OK xong lại FAIL do quét lại lần 2
+        if (fingerAuthenticated)
+        {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+
         // Chỉ cho quét vân tay sau khi RFID đã hợp lệ
         if (!rfidAuthenticated)
         {
@@ -301,17 +369,34 @@ void taskFingerprint(void *pv)
             continue;
         }
 
+        // Cooldown tránh quét quá nhanh
+        if (millis() - lastFingerScanTime < FINGER_SCAN_COOLDOWN_MS)
+        {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
         int id = checkFingerprint();
 
+        // =================================================
+        // KHÔNG CÓ NGÓN TAY
+        // =================================================
+        if (id == -1)
+        {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        lastFingerScanTime = millis();
+
+        // =================================================
+        // LOCAL MATCH OK
+        // =================================================
         if (id > 0)
         {
             Serial.print("FINGERPRINT LOCAL OK, ID: ");
             Serial.println(id);
 
-            // =================================================
-            // CHECK DATABASE/BACKEND
-            // Nếu vân tay đã bị xoá trên app/database thì FAIL
-            // =================================================
             bool valid = checkAuthFromBackend(
                 "FINGERPRINT",
                 String(id)
@@ -335,6 +420,13 @@ void taskFingerprint(void *pv)
 
                 buzzerBeep(2000, 100);
                 ledPulse(LED_MODE_BLUE, 300);
+
+                // Quan trọng: chờ nhấc tay ra
+                waitFingerRemoved(8000);
+
+                // Sau khi OK, không quét nữa cho tới khi hệ thống reset cờ
+                vTaskDelay(pdMS_TO_TICKS(500));
+                continue;
             }
             else
             {
@@ -348,15 +440,24 @@ void taskFingerprint(void *pv)
                 Serial.print("FINGERPRINT DENIED FROM BACKEND, ID: ");
                 Serial.println(id);
 
-                lcdLine1 = "FINGER DELETED";
+                lcdLine1 = "FINGER DENIED";
                 lcdLine2 = "ACCESS DENIED";
                 lcdMessageTime = millis();
 
                 buzzerBeep(1000, 500);
                 ledPulse(LED_MODE_RED, 500);
+
+                waitFingerRemoved(8000);
+
+                vTaskDelay(pdMS_TO_TICKS(500));
+                continue;
             }
         }
-        else if (id == 0)
+
+        // =================================================
+        // LOCAL FAIL
+        // =================================================
+        if (id == 0)
         {
             fingerAuthenticated = false;
 
@@ -373,8 +474,14 @@ void taskFingerprint(void *pv)
 
             buzzerBeep(1000, 300);
             ledPulse(LED_MODE_RED, 500);
+
+            // Quan trọng: chờ nhấc tay ra để không fail liên tục
+            waitFingerRemoved(8000);
+
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(30));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

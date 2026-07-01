@@ -12,12 +12,67 @@
 #include "core/safe_state.h"
 
 // =====================================================
-// CONFIG
+// CONFIG FROM BACKEND
 // =====================================================
-#define VIBRATION_TRIGGER_COUNT 12
+extern bool alertVibrationEnabled;
+extern bool alertDoorEnabled;
+
+// =====================================================
+// VIBRATION CONFIG
+// =====================================================
+// Ngưỡng rung: trước là 12, giờ chỉnh còn 4
+#define VIBRATION_TRIGGER_COUNT 4
+
+// Trong vòng 2 giây nếu rung đủ 4 lần thì cảnh báo
 #define VIBRATION_TIME_WINDOW   2000
+
+// Sau 5 giây tự clear cảnh báo rung nếu không còn alarm khác
 #define VIBRATION_ALARM_TIME    5000
+
+// Chống spam event rung
 #define VIBRATION_SPAM_DELAY    10000
+
+// SW420 thường LOW khi rung
+#define VIBRATION_ACTIVE_LEVEL  LOW
+
+// =====================================================
+// DOOR CONFIG
+// =====================================================
+// MC-38 tuỳ cách đấu dây.
+// Code cũ của bạn đang hiểu HIGH = cửa mở.
+#define DOOR_OPEN_LEVEL HIGH
+
+// Chống dội cửa
+#define DOOR_DEBOUNCE_MS 80
+
+// Chống spam event cửa mở trái phép
+#define DOOR_EVENT_DELAY 10000
+
+// =====================================================
+// HELPER
+// =====================================================
+static void clearVibrationAlarmIfSafe(bool vibrationActive)
+{
+    EventBits_t bits = xEventGroupGetBits(systemEvents);
+
+    // Chỉ tắt alarm nếu không còn cửa mở và không cháy
+    if (
+        !vibrationActive &&
+        !(bits & BIT_DOOR_OPEN) &&
+        !(bits & BIT_FLAME_ACTIVE)
+    )
+    {
+        xEventGroupClearBits(
+            systemEvents,
+            BIT_ALARM_ACTIVE
+        );
+
+        if (safeState == SAFE_ALARM)
+        {
+            safeState = SAFE_LOCKED;
+        }
+    }
+}
 
 // =====================================================
 // TASK SENSOR
@@ -28,7 +83,7 @@ void taskSensor(void *pv)
     pinMode(DOOR_PIN, INPUT_PULLUP);
 
     // =========================
-    // VIBRATION
+    // VIBRATION STATE
     // =========================
     int lastVibrationState = HIGH;
     int vibrationCount = 0;
@@ -40,7 +95,7 @@ void taskSensor(void *pv)
     unsigned long vibrationAlarmStart = 0;
 
     // =========================
-    // DOOR
+    // DOOR STATE
     // =========================
     int lastDoorState = digitalRead(DOOR_PIN);
 
@@ -51,122 +106,126 @@ void taskSensor(void *pv)
 
     SystemEvent event;
 
-    Serial.println("SENSOR TASK STARTED");
+    Serial.println();
+    Serial.println("[SENSOR] TASK STARTED");
+    Serial.print("[SENSOR] VIBRATION_TRIGGER_COUNT = ");
+    Serial.println(VIBRATION_TRIGGER_COUNT);
 
     while (1)
     {
         // =================================================
         // VIBRATION SENSOR
         // =================================================
-        int currentVibrationState = digitalRead(VIBRATION_PIN);
 
-        // SW420 thường LOW khi rung
-        if (
-            lastVibrationState == HIGH &&
-            currentVibrationState == LOW
-        )
+        if (alertVibrationEnabled)
         {
-            if (vibrationCount == 0)
-            {
-                firstTriggerTime = millis();
-            }
+            int currentVibrationState = digitalRead(VIBRATION_PIN);
 
-            vibrationCount++;
-
-            Serial.print("Vibration Count = ");
-            Serial.println(vibrationCount);
-
-            vTaskDelay(pdMS_TO_TICKS(20));
-        }
-
-        lastVibrationState = currentVibrationState;
-
-        // =========================
-        // VIBRATION ALERT
-        // =========================
-        if (
-            vibrationCount >= VIBRATION_TRIGGER_COUNT &&
-            millis() - firstTriggerTime < VIBRATION_TIME_WINDOW
-        )
-        {
+            // Phát hiện cạnh HIGH -> LOW
             if (
-                millis() - lastVibrationAlert > VIBRATION_SPAM_DELAY
+                lastVibrationState == HIGH &&
+                currentVibrationState == VIBRATION_ACTIVE_LEVEL
             )
             {
-                Serial.println();
-                Serial.println("!!! VIBRATION ALERT !!!");
+                if (vibrationCount == 0)
+                {
+                    firstTriggerTime = millis();
+                }
 
-                vibrationActive = true;
-                vibrationAlarmStart = millis();
-                lastVibrationAlert = millis();
+                vibrationCount++;
 
-                safeState = SAFE_ALARM;
+                Serial.print("[VIBRATION] Count = ");
+                Serial.println(vibrationCount);
 
-                event.type = EVENT_VIBRATION;
-
-                strcpy(
-                    event.message,
-                    "SAFE_ALERT_VIBRATION"
-                );
-
-                xQueueSend(
-                    systemQueue,
-                    &event,
-                    0
-                );
-
-                xEventGroupSetBits(
-                    systemEvents,
-                    BIT_ALARM_ACTIVE |
-                    BIT_NEED_GPS |
-                    BIT_TRACKING_MODE
-                );
+                vTaskDelay(pdMS_TO_TICKS(20));
             }
 
-            vibrationCount = 0;
-        }
+            lastVibrationState = currentVibrationState;
 
-        // =========================
-        // RESET VIBRATION COUNTER
-        // =========================
-        if (
-            millis() - firstTriggerTime > VIBRATION_TIME_WINDOW
-        )
-        {
-            vibrationCount = 0;
-        }
-
-        // =========================
-        // AUTO CLEAR VIBRATION ALARM
-        // =========================
-        if (
-            vibrationActive &&
-            millis() - vibrationAlarmStart > VIBRATION_ALARM_TIME
-        )
-        {
-            EventBits_t bits =
-                xEventGroupGetBits(systemEvents);
-
-            // Chỉ tắt alarm rung nếu cửa không mở và không cháy
+            // =========================
+            // VIBRATION ALERT
+            // =========================
             if (
-                !(bits & BIT_DOOR_OPEN) &&
-                !(bits & BIT_FLAME_ACTIVE)
+                vibrationCount >= VIBRATION_TRIGGER_COUNT &&
+                millis() - firstTriggerTime < VIBRATION_TIME_WINDOW
+            )
+            {
+                if (
+                    millis() - lastVibrationAlert > VIBRATION_SPAM_DELAY
+                )
+                {
+                    Serial.println();
+                    Serial.println("!!! VIBRATION ALERT !!!");
+
+                    vibrationActive = true;
+                    vibrationAlarmStart = millis();
+                    lastVibrationAlert = millis();
+
+                    safeState = SAFE_ALARM;
+
+                    event.type = EVENT_VIBRATION;
+
+                    strcpy(
+                        event.message,
+                        "SAFE_ALERT_VIBRATION"
+                    );
+
+                    xQueueSend(
+                        systemQueue,
+                        &event,
+                        0
+                    );
+
+                    xEventGroupSetBits(
+                        systemEvents,
+                        BIT_ALARM_ACTIVE |
+                        BIT_NEED_GPS |
+                        BIT_TRACKING_MODE
+                    );
+                }
+
+                vibrationCount = 0;
+            }
+
+            // =========================
+            // RESET VIBRATION COUNTER
+            // =========================
+            if (
+                vibrationCount > 0 &&
+                millis() - firstTriggerTime > VIBRATION_TIME_WINDOW
+            )
+            {
+                vibrationCount = 0;
+            }
+
+            // =========================
+            // AUTO CLEAR VIBRATION ALARM
+            // =========================
+            if (
+                vibrationActive &&
+                millis() - vibrationAlarmStart > VIBRATION_ALARM_TIME
             )
             {
                 Serial.println("[VIBRATION] ALARM CLEARED");
 
                 vibrationActive = false;
 
-                xEventGroupClearBits(
-                    systemEvents,
-                    BIT_ALARM_ACTIVE
-                );
-
-                if (safeState == SAFE_ALARM)
-                {
-                    safeState = SAFE_LOCKED;
-                }
+                clearVibrationAlarmIfSafe(vibrationActive);
             }
+        }
+        else
+        {
+            // Nếu admin tắt cảnh báo rung trên app
+            if (vibrationActive)
+            {
+                Serial.println("[VIBRATION] DISABLED BY CONFIG -> CLEAR");
+            }
+
+            vibrationCount = 0;
+            vibrationActive = false;
+            firstTriggerTime = 0;
+
+            clearVibrationAlarmIfSafe(vibrationActive);
         }
 
         // =================================================
@@ -176,22 +235,21 @@ void taskSensor(void *pv)
 
         if (currentDoorState != lastDoorState)
         {
-            vTaskDelay(pdMS_TO_TICKS(80));
+            vTaskDelay(pdMS_TO_TICKS(DOOR_DEBOUNCE_MS));
 
             currentDoorState = digitalRead(DOOR_PIN);
 
             if (currentDoorState != lastDoorState)
             {
-                EventBits_t bits =
-                    xEventGroupGetBits(systemEvents);
+                EventBits_t bits = xEventGroupGetBits(systemEvents);
 
                 // =====================================
                 // DOOR OPEN
                 // =====================================
-                if (currentDoorState == HIGH)
+                if (currentDoorState == DOOR_OPEN_LEVEL)
                 {
                     Serial.println();
-                    Serial.println("DOOR OPEN");
+                    Serial.println("[DOOR] OPEN");
 
                     xEventGroupSetBits(
                         systemEvents,
@@ -202,7 +260,7 @@ void taskSensor(void *pv)
 
                     if (bits & BIT_AUTH_OK)
                     {
-                        Serial.println("AUTHORIZED ACCESS");
+                        Serial.println("[DOOR] AUTHORIZED ACCESS");
 
                         safeState = SAFE_OPEN;
 
@@ -221,37 +279,45 @@ void taskSensor(void *pv)
                     }
                     else
                     {
-                        if (
-                            !unauthorizedSent &&
-                            millis() - lastDoorEvent > 10000
-                        )
+                        // Nếu admin bật cảnh báo cửa thì mới báo unauthorized
+                        if (alertDoorEnabled)
                         {
-                            Serial.println("!!! UNAUTHORIZED ACCESS !!!");
+                            if (
+                                !unauthorizedSent &&
+                                millis() - lastDoorEvent > DOOR_EVENT_DELAY
+                            )
+                            {
+                                Serial.println("!!! UNAUTHORIZED ACCESS !!!");
 
-                            unauthorizedSent = true;
-                            lastDoorEvent = millis();
+                                unauthorizedSent = true;
+                                lastDoorEvent = millis();
 
-                            safeState = SAFE_ALARM;
+                                safeState = SAFE_ALARM;
 
-                            event.type = EVENT_UNAUTHORIZED;
+                                event.type = EVENT_UNAUTHORIZED;
 
-                            strcpy(
-                                event.message,
-                                "SAFE_ALERT_UNAUTHORIZED"
-                            );
+                                strcpy(
+                                    event.message,
+                                    "SAFE_ALERT_UNAUTHORIZED"
+                                );
 
-                            xQueueSend(
-                                systemQueue,
-                                &event,
-                                0
-                            );
+                                xQueueSend(
+                                    systemQueue,
+                                    &event,
+                                    0
+                                );
 
-                            xEventGroupSetBits(
-                                systemEvents,
-                                BIT_ALARM_ACTIVE |
-                                BIT_NEED_GPS |
-                                BIT_TRACKING_MODE
-                            );
+                                xEventGroupSetBits(
+                                    systemEvents,
+                                    BIT_ALARM_ACTIVE |
+                                    BIT_NEED_GPS |
+                                    BIT_TRACKING_MODE
+                                );
+                            }
+                        }
+                        else
+                        {
+                            Serial.println("[DOOR] UNAUTHORIZED IGNORED BY CONFIG");
                         }
                     }
                 }
@@ -262,7 +328,7 @@ void taskSensor(void *pv)
                 else
                 {
                     Serial.println();
-                    Serial.println("DOOR CLOSED");
+                    Serial.println("[DOOR] CLOSED");
 
                     xEventGroupClearBits(
                         systemEvents,
@@ -272,13 +338,21 @@ void taskSensor(void *pv)
                         BIT_FINGER_OK
                     );
 
-                    xEventGroupClearBits(
-                        systemEvents,
-                        BIT_ALARM_ACTIVE
-                    );
-
                     unauthorizedSent = false;
-                    vibrationActive = false;
+
+                    // Nếu không còn cháy và không còn rung thì mới tắt alarm
+                    EventBits_t newBits = xEventGroupGetBits(systemEvents);
+
+                    if (
+                        !vibrationActive &&
+                        !(newBits & BIT_FLAME_ACTIVE)
+                    )
+                    {
+                        xEventGroupClearBits(
+                            systemEvents,
+                            BIT_ALARM_ACTIVE
+                        );
+                    }
 
                     if (!lockSent)
                     {
@@ -299,7 +373,7 @@ void taskSensor(void *pv)
                             0
                         );
 
-                        Serial.println("SAFE LOCKED");
+                        Serial.println("[DOOR] SAFE LOCKED");
                     }
                 }
 

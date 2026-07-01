@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "948516696549",
+    "project_id": "smartsafeapp-a4d20",
+    "storage_bucket": "smartsafeapp-a4d20.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:948516696549:android:85ab8667cdd5f9c180ff0c",
+        "android_client_info": {
+          "package_name": "com.example.smart_safe_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxpxdYNiC-RpML-M9QeGW9d_azMC6RPNI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
