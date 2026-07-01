@@ -305,105 +305,125 @@ Ghi auth_logs
 
 ---
 
-# 7. Luồng mở bằng RFID
+# 7. Các phương thức mở két
 
-```text
-Đưa thẻ
+Hệ thống hỗ trợ 2 nhóm phương thức mở két:
 
-↓
+1. Mở két trực tiếp tại thiết bị:
+   - RFID
+   - Vân tay
+   - Keypad / mật khẩu
 
-MFRC522 đọc UID
-
-↓
-
-ESP32 kiểm tra UID
-
-↓
-
-Đúng
-
-↓
-
-Servo mở
-
-↓
-
-Lưu auth_logs
-
-↓
-
-API
-
-↓
-
-Database
-
-↓
-
-App
-
-Sai
-
-↓
-
-Buzzer
-
-↓
-
-Tăng số lần sai
-```
+2. Mở két từ xa bằng App Mobile
 
 ---
 
-# 8. Luồng mở bằng mật khẩu
+# 8. Luồng mở két trực tiếp tại thiết bị
 
 ```text
-Nhập mật khẩu
+Người dùng xác thực bằng RFID / Vân tay / Keypad
 
 ↓
 
-ESP32 kiểm tra
+ESP32 nhận dữ liệu xác thực
 
 ↓
 
-Đúng
+ESP32 kiểm tra thông tin hợp lệ
 
 ↓
 
-Servo mở
+Nếu hợp lệ
 
 ↓
 
-Lưu auth_logs
+Servo mở chốt khóa
 
 ↓
 
-API
+LCD hiển thị mở két thành công
 
 ↓
 
-Database
+Buzzer báo thành công
 
 ↓
 
-App
-
-Sai
+ESP32 gửi auth_logs lên API
 
 ↓
 
-Buzzer
+API lưu vào Database
 
 ↓
 
-Sai nhiều lần
+App cập nhật lịch sử mở két
+
+Nếu không hợp lệ
 
 ↓
 
-Chuyển sang cảnh báo
-```
+Buzzer báo lỗi
 
----
+↓
+
+Tăng số lần xác thực sai
+
+↓
+
+Lưu auth_logs thất bại
+
+↓
+
+Nếu sai quá số lần cho phép
+
+↓
+
+Chuyển sang trạng thái cảnh báo
+
+↓
+
+Gửi SMS / gửi cảnh báo lên App
+
+# 8. Luồng mở bằng APP
+
+Người dùng đăng nhập App
+
+↓
+
+App gửi yêu cầu mở két
+
+↓
+
+API kiểm tra Token và quyền người dùng
+
+↓
+
+API tạo lệnh mở két trong bảng safe_commands
+
+↓
+
+ESP32 gọi API kiểm tra lệnh mới
+
+↓
+
+ESP32 nhận lệnh UNLOCK
+
+↓
+
+Servo mở chốt khóa
+
+↓
+
+ESP32 cập nhật trạng thái két
+
+↓
+
+API lưu vào safe_status và auth_logs
+
+↓
+
+App hiển thị mở két thành công
 
 # 9. Luồng chống trộm
 
