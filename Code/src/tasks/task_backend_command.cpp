@@ -41,6 +41,8 @@ bool alertDoorEnabled = true;
 bool flameAlertEnabled = true;
 bool gpsAlertEnabled = true;
 
+String currentAuthUser = "";
+String currentAuthMethod = "";
 int maxWrongPassword = 3;
 int gpsAllowedRadiusM = 50;
 
@@ -249,6 +251,58 @@ void markCommandFailed(int commandId)
 // =====================================================
 // CHECK AUTH FROM BACKEND
 // =====================================================
+// bool checkAuthFromBackend(String methodType, String methodValue)
+// {
+//     if (WiFi.status() != WL_CONNECTED)
+//     {
+//         Serial.println("[AUTH] WIFI NOT CONNECTED");
+//         return false;
+//     }
+
+//     HTTPClient http;
+
+//     String url =
+//         commandBackendUrl +
+//         "/api/auth-methods/check";
+
+//     http.begin(url);
+//     http.setTimeout(8000);
+//     http.setReuse(false);
+//     http.addHeader("Content-Type", "application/json");
+
+//     DynamicJsonDocument doc(512);
+
+//     doc["method_type"] = methodType;
+//     doc["method_value"] = methodValue;
+
+//     String body;
+//     serializeJson(doc, body);
+
+//     int code = http.POST(body);
+//     String response = http.getString();
+
+//     Serial.print("[AUTH] HTTP CODE = ");
+//     Serial.println(code);
+
+//     Serial.print("[AUTH] RESPONSE = ");
+//     Serial.println(response);
+
+//     http.end();
+
+//     if (code != 200) return false;
+
+//     DynamicJsonDocument resDoc(512);
+
+//     DeserializationError error =
+//         deserializeJson(resDoc, response);
+
+//     if (error) return false;
+
+//     bool valid =
+//         resDoc["valid"] | false;
+
+//     return valid;
+// }
 bool checkAuthFromBackend(String methodType, String methodValue)
 {
     if (WiFi.status() != WL_CONNECTED)
@@ -259,9 +313,7 @@ bool checkAuthFromBackend(String methodType, String methodValue)
 
     HTTPClient http;
 
-    String url =
-        commandBackendUrl +
-        "/api/auth-methods/check";
+    String url = commandBackendUrl + "/api/auth-methods/check";
 
     http.begin(url);
     http.setTimeout(8000);
@@ -281,27 +333,46 @@ bool checkAuthFromBackend(String methodType, String methodValue)
 
     Serial.print("[AUTH] HTTP CODE = ");
     Serial.println(code);
-
     Serial.print("[AUTH] RESPONSE = ");
     Serial.println(response);
 
     http.end();
 
-    if (code != 200) return false;
+    if (code != 200)
+    {
+        return false;
+    }
 
     DynamicJsonDocument resDoc(512);
 
-    DeserializationError error =
-        deserializeJson(resDoc, response);
+    DeserializationError error = deserializeJson(resDoc, response);
 
-    if (error) return false;
+    if (error)
+    {
+        return false;
+    }
 
-    bool valid =
-        resDoc["valid"] | false;
+    bool valid = resDoc["valid"] | false;
 
-    return valid;
+    if (valid)
+    {
+        currentAuthUser = String(resDoc["user_name"] | "");
+        currentAuthMethod = methodType;
+
+        Serial.print("[AUTH] USER = ");
+        Serial.println(currentAuthUser);
+
+        Serial.print("[AUTH] METHOD = ");
+        Serial.println(currentAuthMethod);
+
+        return true;
+    }
+
+    currentAuthUser = "";
+    currentAuthMethod = "";
+
+    return false;
 }
-
 // =====================================================
 // OPEN SAFE AFTER AUTH
 // =====================================================
@@ -477,11 +548,25 @@ int enrollFingerprint()
 // =====================================================
 // HANDLE OPEN_SAFE
 // =====================================================
-void handleOpenSafe(int commandId)
+void handleOpenSafe(int commandId, String commandValue)
 {
     Serial.println("[BACKEND] OPEN_SAFE RECEIVED");
 
-    openSafeAfterAuth("Safe opened by app OTP");
+    String username = getJsonValue(commandValue, "username");
+
+    if (username == "")
+    {
+        username = "APP USER";
+    }
+
+    openSafeAfterAuth(
+        "Mo ket tu app OTP - User: " + username
+    );
+
+    sendBackendEvent(
+        "UNLOCK",
+        "Mo ket tu app OTP - User: " + username
+    );
 
     markCommandDone(commandId);
 }
@@ -623,6 +708,46 @@ void handleAddFinger(int commandId, String commandValue)
 // =====================================================
 // HANDLE COMMAND
 // =====================================================
+// void handleBackendCommand(
+//     int commandId,
+//     String command,
+//     String commandValue
+// )
+// {
+//     command.trim();
+
+//     Serial.print("[COMMAND HANDLE] ID = ");
+//     Serial.println(commandId);
+
+//     Serial.print("[COMMAND HANDLE] COMMAND = ");
+//     Serial.println(command);
+
+//     if (command == "OPEN_SAFE")
+//     {
+//         handleOpenSafe(commandId);
+//     }
+//     else if (command == "ADD_RFID")
+//     {
+//         handleAddRFID(commandId, commandValue);
+//     }
+//     else if (
+//         command == "ADD_FINGER" ||
+//         command == "ADD_FINGERPRINT"
+//     )
+//     {
+//         handleAddFinger(commandId, commandValue);
+//     }
+//     else
+//     {
+//         Serial.println("[COMMAND] UNKNOWN");
+
+//         lcdLine1 = "CMD UNKNOWN";
+//         lcdLine2 = command;
+//         lcdMessageTime = millis();
+
+//         markCommandFailed(commandId);
+//     }
+// }
 void handleBackendCommand(
     int commandId,
     String command,
@@ -637,9 +762,12 @@ void handleBackendCommand(
     Serial.print("[COMMAND HANDLE] COMMAND = ");
     Serial.println(command);
 
+    Serial.print("[COMMAND HANDLE] VALUE = ");
+    Serial.println(commandValue);
+
     if (command == "OPEN_SAFE")
     {
-        handleOpenSafe(commandId);
+        handleOpenSafe(commandId, commandValue);
     }
     else if (command == "ADD_RFID")
     {
@@ -663,7 +791,6 @@ void handleBackendCommand(
         markCommandFailed(commandId);
     }
 }
-
 // =====================================================
 // TASK BACKEND COMMAND
 // =====================================================

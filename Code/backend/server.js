@@ -215,8 +215,15 @@ app.post("/api/verify-otp-open", authRequired, async (req, res) => {
 
     await db.query(
       `INSERT INTO safe_commands(command, command_value, status, created_by)
-       VALUES ('OPEN_SAFE', 'OPEN', 'pending', ?)`,
-      [user_id]
+      VALUES ('OPEN_SAFE', ?, 'pending', ?)`,
+      [
+        JSON.stringify({
+          source: "APP_OTP",
+          user_id: req.user.id,
+          username: req.user.username,
+        }),
+        user_id,
+      ]
     );
 
     await db.query(

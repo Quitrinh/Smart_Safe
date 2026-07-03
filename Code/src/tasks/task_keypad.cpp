@@ -16,7 +16,9 @@
 extern String lcdLine1;
 extern String lcdLine2;
 extern unsigned long lcdMessageTime;
-
+extern String currentAuthUser;
+extern String currentAuthMethod;
+extern void sendBackendEvent(String type, String msg);
 extern int maxWrongPassword;
 
 String passwordInput = "";
@@ -289,6 +291,12 @@ void taskKeypad(void *pv)
                 ledPulse(LED_MODE_GREEN, 400);
 
                 Serial.println("SAFE UNLOCKED");
+                sendBackendEvent(
+                "UNLOCK",
+                "Mo ket thanh cong - User: " +
+                currentAuthUser +
+                " - Method: RFID + FINGERPRINT + KEYPAD"
+                );
 
                 passwordInput = "";
                 passwordSessionStarted = false;
