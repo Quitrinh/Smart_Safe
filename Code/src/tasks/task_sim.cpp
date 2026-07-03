@@ -591,22 +591,22 @@ void handleSIMEvent(SystemEvent event)
 
     switch (event.type)
     {
-        case EVENT_UNLOCK:
-            eventName = "UNLOCK";
-            msg =
-                "SMART SAFE\n"
-                "Su kien: Mo ket thanh cong\n"
-                "Trang thai: OPEN\n"
-                "Nguon: Xac thuc hop le";
-            break;
+        // case EVENT_UNLOCK:
+        //     eventName = "UNLOCK";
+        //     msg =
+        //         "SMART SAFE\n"
+        //         "Su kien: Mo ket thanh cong\n"
+        //         "Trang thai: OPEN\n"
+        //         "Nguon: Xac thuc hop le";
+        //     break;
 
-        case EVENT_LOCK:
-            eventName = "LOCK";
-            msg =
-                "SMART SAFE\n"
-                "Su kien: Ket da khoa\n"
-                "Trang thai: SECURE";
-            break;
+        // case EVENT_LOCK:
+        //     eventName = "LOCK";
+        //     msg =
+        //         "SMART SAFE\n"
+        //         "Su kien: Ket da khoa\n"
+        //         "Trang thai: SECURE";
+        //     break;
 
         case EVENT_UNAUTHORIZED:
             eventName = "UNAUTHORIZED";
