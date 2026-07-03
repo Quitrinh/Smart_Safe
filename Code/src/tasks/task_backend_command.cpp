@@ -562,12 +562,6 @@ void handleOpenSafe(int commandId, String commandValue)
     openSafeAfterAuth(
         "Mo ket tu app OTP - User: " + username
     );
-
-    sendBackendEvent(
-        "UNLOCK",
-        "Mo ket tu app OTP - User: " + username
-    );
-
     markCommandDone(commandId);
 }
 

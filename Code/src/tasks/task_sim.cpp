@@ -571,42 +571,32 @@ void appendGPS(String &msg)
 // =====================================================
 void handleSIMEvent(SystemEvent event)
 {
-    if (event.type == lastEventType)
-    {
-        if (millis() - lastEventTime < SMS_DUPLICATE_DELAY)
-        {
-            Serial.println("[SIM] DUPLICATE EVENT");
-            return;
-        }
-    }
-
-    lastEventType =
-        event.type;
-
-    lastEventTime =
-        millis();
+    static EventType lastSavedType = EVENT_ALARM_OFF;
+    static unsigned long lastSavedTime = 0;
 
     String msg = "";
     String eventName = "";
+    bool needSMS = false;
 
     switch (event.type)
     {
-        // case EVENT_UNLOCK:
-        //     eventName = "UNLOCK";
-        //     msg =
-        //         "SMART SAFE\n"
-        //         "Su kien: Mo ket thanh cong\n"
-        //         "Trang thai: OPEN\n"
-        //         "Nguon: Xac thuc hop le";
-        //     break;
+        case EVENT_UNLOCK:
+            eventName = "UNLOCK";
+            msg =
+                "SMART SAFE\n"
+                "Su kien: Mo ket thanh cong\n"
+                "Trang thai: OPEN";
+            needSMS = false;
+            break;
 
-        // case EVENT_LOCK:
-        //     eventName = "LOCK";
-        //     msg =
-        //         "SMART SAFE\n"
-        //         "Su kien: Ket da khoa\n"
-        //         "Trang thai: SECURE";
-        //     break;
+        case EVENT_LOCK:
+            eventName = "LOCK";
+            msg =
+                "SMART SAFE\n"
+                "Su kien: Ket da khoa\n"
+                "Trang thai: SECURE";
+            needSMS = false;
+            break;
 
         case EVENT_UNAUTHORIZED:
             eventName = "UNAUTHORIZED";
@@ -616,6 +606,7 @@ void handleSIMEvent(SystemEvent event)
                 "Muc do: CANH BAO\n"
                 "Trang thai: ALARM";
             appendGPS(msg);
+            needSMS = true;
             break;
 
         case EVENT_VIBRATION:
@@ -626,6 +617,7 @@ void handleSIMEvent(SystemEvent event)
                 "Muc do: CANH BAO\n"
                 "Trang thai: WARNING";
             appendGPS(msg);
+            needSMS = true;
             break;
 
         case EVENT_SMOKE:
@@ -633,17 +625,17 @@ void handleSIMEvent(SystemEvent event)
             msg =
                 "SMART SAFE ALERT\n"
                 "Su kien: Phat hien khoi/gas\n"
-                "Muc do: NGUY HIEM\n"
-                "Trang thai: FIRE WARNING";
+                "Muc do: NGUY HIEM";
             appendGPS(msg);
+            needSMS = true;
             break;
 
         case EVENT_PASSWORD_FAIL:
             eventName = "PASSWORD_FAIL";
             msg =
                 "SMART SAFE\n"
-                "Su kien: Nhap sai mat khau\n"
-                "Muc do: CANH BAO";
+                "Su kien: Nhap sai mat khau";
+            needSMS = false;
             break;
 
         case EVENT_FLAME_DETECTED:
@@ -652,14 +644,27 @@ void handleSIMEvent(SystemEvent event)
                 "SMART SAFE ALERT\n"
                 "Su kien: Phat hien lua\n"
                 "Muc do: KHAN CAP\n"
-                "Trang thai: FIRE ALARM\n"
-                "Xu ly: Da kich hoat coi va bom";
+                "Trang thai: FIRE ALARM";
             appendGPS(msg);
+            needSMS = true;
             break;
 
         default:
             return;
     }
+
+    // chống lưu lịch sử lặp trong 5 giây
+    if (
+        event.type == lastSavedType &&
+        millis() - lastSavedTime < 5000
+    )
+    {
+        Serial.println("[SIM] SKIP DUPLICATE EVENT SAVE");
+        return;
+    }
+
+    lastSavedType = event.type;
+    lastSavedTime = millis();
 
     Serial.println();
     Serial.println("=================================");
@@ -667,20 +672,22 @@ void handleSIMEvent(SystemEvent event)
     Serial.println(eventName);
     Serial.println(msg);
 
-    sendBackendEventWiFi(
-        eventName,
-        msg
-    );
+    // Lưu lịch sử lên app/backend
+    sendBackendEventWiFi(eventName, msg);
 
-    Serial.println("[SIM] SEND SMS TO ALL");
+    // Chỉ SMS cho cảnh báo nguy hiểm
+    if (needSMS)
+    {
+        Serial.println("[SIM] SEND SMS TO ALL");
+        sendSMSAll(msg);
+    }
+    else
+    {
+        Serial.println("[SIM] NO SMS FOR NORMAL EVENT");
+    }
 
-    sendSMSAll(msg);
-
-    vTaskDelay(
-        pdMS_TO_TICKS(1000)
-    );
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
-
 // =====================================================
 // TASK SIM
 // =====================================================
