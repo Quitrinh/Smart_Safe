@@ -581,14 +581,8 @@ void handleSIMEvent(SystemEvent event)
     switch (event.type)
     {
         case EVENT_UNLOCK:
-            eventName = "UNLOCK";
-            msg =
-                "SMART SAFE\n"
-                "Su kien: Mo ket thanh cong\n"
-                "Trang thai: OPEN";
-            needSMS = false;
-            break;
-
+            Serial.println("[SIM] SKIP GENERIC UNLOCK EVENT");
+            return;
         case EVENT_LOCK:
             eventName = "LOCK";
             msg =
