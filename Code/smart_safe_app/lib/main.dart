@@ -43,7 +43,6 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   print("Background message: ${message.notification?.title}");
 }
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -52,7 +51,21 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    FirebaseMessaging.onBackgroundMessage(
+      firebaseMessagingBackgroundHandler,
+    );
+
+    await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    final token = await FirebaseMessaging.instance.getToken();
+
+    print("========== FCM TOKEN ==========");
+    print(token);
+    print("===============================");
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print(
@@ -1193,17 +1206,6 @@ Future<void> fetchSafeStatus() async {
   }
 }
 
-  // Future<void> fetchEvents() async {
-  //   setState(() => loading = true);
-  //   try {
-  //     final res = await http.get(Uri.parse("$baseUrl/api/events"));
-  //     final data = jsonDecode(res.body);
-  //     if (data["success"] == true) {
-  //       setState(() => events = data["data"]);
-  //     }
-  //   } catch (_) {}
-  //   setState(() => loading = false);
-  // }
 Future<void> fetchEvents() async {
   try {
     final res = await http.get(Uri.parse("$baseUrl/api/events"));
@@ -1216,7 +1218,7 @@ Future<void> fetchEvents() async {
       });
     } else {
       setState(() {
-        events = []; // tránh giữ dữ liệu cũ
+        events = []; 
       });
     }
   } catch (e) {
@@ -1677,20 +1679,6 @@ Future<void> fetchAuthMethods() async {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Hủy")),
           ElevatedButton(
             onPressed: () async {
-              // // Verify admin password
-              // final verifyRes = await http.post(
-              //   Uri.parse("$baseUrl/api/admin/verify-password"),
-              //   headers: {"Content-Type": "application/json"},
-              //   body: jsonEncode({"password": adminCtrl.text.trim()}),
-              // );
-              // final verifyData = jsonDecode(verifyRes.body);
-              // if (verifyData["success"] != true) {
-              //   if (!mounted) return;
-              //   ScaffoldMessenger.of(context).showSnackBar(
-              //     const SnackBar(content: Text("Sai mật khẩu admin")),
-              //   );
-              //   return;
-              // }
 
               // Gửi lệnh enroll đến backend
               await http.post(
@@ -1870,22 +1858,6 @@ Future<void> requestOTP() async {
     SnackBar(content: Text(data["message"] ?? "OTP verified")),
   );
 }
-// Future<void> registerDeviceToken(String token) async {
-//   try {
-//     final res = await http.post(
-//       Uri.parse("$baseUrl/api/device-tokens"),
-//       headers: authHeaders,
-//       body: jsonEncode({
-//         "device_token": token,
-//         "platform": "android",
-//       }),
-//     );
-
-//     print("Register device token: ${res.body}");
-//   } catch (e) {
-//     print("registerDeviceToken error: $e");
-//   }
-// }
 Future<void> fetchPushStatus() async {
   try {
     final res = await http.get(
@@ -1974,41 +1946,7 @@ Future<void> markAllNotificationsRead() async {
     );
   }
 }
-// Future<void> turnOffAlarm() async {
-//   try {
-//     final res = await http.post(
-//       Uri.parse("$baseUrl/api/admin/alarm/off"),
-//       headers: authHeaders,
-//       body: jsonEncode({}),
-//     );
 
-//     final data = jsonDecode(res.body);
-
-//     if (res.statusCode == 200 && data["success"] == true) {
-//       await refreshAll();
-
-//       if (!mounted) return;
-
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text(data["message"] ?? "Đã tắt cảnh báo")),
-//       );
-//     } else {
-//       if (!mounted) return;
-
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text(data["message"] ?? "Không tắt được cảnh báo")),
-//       );
-//     }
-//   } catch (e) {
-//     print("turnOffAlarm error: $e");
-
-//     if (!mounted) return;
-
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       const SnackBar(content: Text("Lỗi khi tắt cảnh báo")),
-//     );
-//   }
-// }
 Future<void> disablePushNotifications() async {
   try {
     final res = await http.patch(
@@ -2745,175 +2683,11 @@ Widget dashboardView() {
             ),
           ),
           const SizedBox(height: 12),
-
-          // SizedBox(
-          //   height: 54,
-          //   child: FilledButton.icon(
-          //     style: FilledButton.styleFrom(
-          //       backgroundColor: Colors.red,
-          //     ),
-          //     onPressed: turnOffAlarm,
-          //     icon: const Icon(Icons.volume_off),
-          //     label: const Text("Tắt cảnh báo"),
-          //   ),
-          // ),
         ],
       ),
     );
   }
 
-//   Widget eventsView() {
-//   return Column(
-//     children: [
-//       // Header + Trash icon
-//       Padding(
-//         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-//         child: Row(
-//           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//           children: [
-//             const Text(
-//               "Lịch sử sự kiện",
-//               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-//             ),
-//             IconButton(
-//               icon: Icon(editingMode ? Icons.close : Icons.delete),
-//               onPressed: () {
-//                 setState(() {
-//                   editingMode = !editingMode;
-//                   if (!editingMode) selectedEvents.clear();
-//                 });
-//               },
-//             ),
-//           ],
-//         ),
-//       ),
-
-//       // Remove / Remove All /Restore buttons khi editingMode
-//       if (editingMode)
-//         Padding(
-//           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-//           child: Column(
-//             children: [
-//               Row(
-//                 children: [
-//                   Expanded(
-//                     child: ElevatedButton.icon(
-//                       icon: const Icon(Icons.delete_forever),
-//                       label: const Text("Remove Selected"),
-//                       onPressed: () {
-//                         final idsToRemove = selectedEvents.entries
-//                             .where((e) => e.value)
-//                             .map((e) => e.key)
-//                             .toList();
-//                         removeEvents(idsToRemove);
-//                       },
-//                     ),
-//                   ),
-//                   const SizedBox(width: 8),
-//                   Expanded(
-//                     child: ElevatedButton.icon(
-//                       icon: const Icon(Icons.delete_sweep),
-//                       label: const Text("Remove All"),
-//                       onPressed: () {
-//                         removeEvents(
-//                           events.map((e) => int.parse(e["id"].toString())).toList(),
-//                         );
-//                       },
-//                     ),
-//                   ),
-//                 ],
-//               ),
-
-//               const SizedBox(height: 8),
-
-//               Row(
-//                 children: [
-//                   Expanded(
-//                     child: ElevatedButton.icon(
-//                       style: ElevatedButton.styleFrom(
-//                         backgroundColor: Colors.green,
-//                       ),
-//                       icon: const Icon(Icons.restore),
-//                       label: const Text("Restore Selected"),
-//                       onPressed: () {
-//                         final idsToRestore = selectedEvents.entries
-//                             .where((e) => e.value)
-//                             .map((e) => e.key)
-//                             .toList();
-//                         restoreEvents(idsToRestore);
-//                       },
-//                     ),
-//                   ),
-//                   const SizedBox(width: 8),
-//                   Expanded(
-//                     child: ElevatedButton.icon(
-//                       style: ElevatedButton.styleFrom(
-//                         backgroundColor: Colors.blue,
-//                       ),
-//                       icon: const Icon(Icons.restore_from_trash),
-//                       label: const Text("Restore All"),
-//                       onPressed: () {
-//                         restoreEvents(
-//                           events.map((e) => int.parse(e["id"].toString())).toList(),
-//                         );
-//                       },
-//                     ),
-//                   ),
-//                 ],
-//               ),
-//             ],
-//           ),
-//         ),
-
-//       Expanded(
-//         child: RefreshIndicator(
-//           onRefresh: fetchEvents,
-//           child: ListView.builder(
-//             padding: const EdgeInsets.all(16),
-//             itemCount: events.length,
-//             itemBuilder: (context, index) {
-//               final e = events[index];
-//               final checked = selectedEvents[e["id"]] ?? false;
-
-//               return Card(
-//                 child: ListTile(
-//                   leading: editingMode
-//                       ? Checkbox(
-//                           value: checked,
-//                           onChanged: (val) {
-//                             setState(() {
-//                               selectedEvents[e["id"]] = val ?? false;
-//                             });
-//                           },
-//                         )
-//                       : Icon(
-//                           eventIcon(e["event_type"]?.toString() ?? ""),
-//                           color: eventColor(e["event_type"]?.toString() ?? ""),
-//                         ),
-//                   title: Text(e["event_type"]?.toString() ?? ""),
-//                   subtitle: Text(
-//                       "${e["message"] ?? ""}\n${formatTime(e["created_at"]?.toString())}"),
-//                   trailing: editingMode
-//                       ? null
-//                       : IconButton(
-//                           icon: const Icon(Icons.map, color: Colors.teal),
-//                           onPressed: () {
-//                             openMap(
-//                               e["gps_lat"],
-//                               e["gps_lng"],
-//                             );
-//                           },
-//                         ),
-//                   isThreeLine: true,
-//                 ),
-//               );
-//             },
-//           ),
-//         ),
-//       ),
-//     ],
-//   );
-// }
 Widget eventsView() {
   return Column(
     children: [
