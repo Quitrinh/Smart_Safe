@@ -1891,82 +1891,6 @@ app.delete("/api/users/:id", authRequired, adminRequired, async (req, res) => {
   }
 });
 
-// // ===============================
-// // DEVICE TOKEN - APP DANG KY THIET BI
-// // ===============================
-// app.post("/api/device-tokens", authRequired, async (req, res) => {
-//   try {
-//     const { device_token, platform } = req.body;
-
-//     if (!device_token) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Missing device_token",
-//       });
-//     }
-
-//     await db.query(
-//       `INSERT INTO device_tokens(user_id, device_token, platform, status, last_seen_at)
-//        VALUES (?, ?, ?, 'active', NOW())
-//        ON DUPLICATE KEY UPDATE
-//        user_id = VALUES(user_id),
-//        platform = VALUES(platform),
-//        status = 'active',
-//        last_seen_at = NOW()`,
-//       [req.user.id, device_token, platform || "android"]
-//     );
-
-//     res.json({
-//       success: true,
-//       message: "Device token saved",
-//     });
-//   } catch (err) {
-//     res.status(500).json({ success: false, error: err.message });
-//   }
-// });
-
-// // ===============================
-// // DEVICE TOKEN - HUY DANG KY THIET BI
-// // ===============================
-// app.delete("/api/device-tokens", authRequired, async (req, res) => {
-//   try {
-//     const { device_token } = req.body;
-
-//     await db.query(
-//       `UPDATE device_tokens
-//        SET status = 'inactive'
-//        WHERE user_id = ? AND device_token = ?`,
-//       [req.user.id, device_token]
-//     );
-
-//     res.json({
-//       success: true,
-//       message: "Device token disabled",
-//     });
-//   } catch (err) {
-//     res.status(500).json({ success: false, error: err.message });
-//   }
-// });
-// app.patch("/api/device-tokens/disable-all", authRequired, async (req, res) => {
-//   try {
-//     await db.query(
-//       `UPDATE device_tokens
-//        SET status = 'inactive'
-//        WHERE user_id = ?`,
-//       [req.user.id]
-//     );
-
-//     res.json({
-//       success: true,
-//       message: "Da tat thong bao dien thoai",
-//     });
-//   } catch (err) {
-//     res.status(500).json({
-//       success: false,
-//       error: err.message,
-//     });
-//   }
-// });
 app.get("/api/device-tokens/status", authRequired, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -2271,21 +2195,19 @@ app.get("/db-test", async (req, res) => {
 async function sendPushToAllActiveDevices(title, body, data = {}) {
   try {
     const [rows] = await db.query(
-      `SELECT device_token
+      `SELECT id, user_id, device_token
        FROM device_tokens
-       WHERE status = 'active'`
+       WHERE status = 'active'
+       AND device_token IS NOT NULL`
     );
 
-    const tokens = rows
-      .map(r => r.device_token)
-      .filter(Boolean);
+    const tokens = rows.map(r => r.device_token).filter(Boolean);
+
+    console.log("[FCM] TOKEN COUNT =", tokens.length);
 
     if (tokens.length === 0) {
       console.log("[FCM] No active device tokens");
-      return {
-        successCount: 0,
-        failureCount: 0,
-      };
+      return { successCount: 0, failureCount: 0 };
     }
 
     const stringData = {};
@@ -2298,16 +2220,44 @@ async function sendPushToAllActiveDevices(title, body, data = {}) {
 
     const result = await admin.messaging().sendEachForMulticast({
       tokens,
-      notification: {
-        title,
-        body,
-      },
+      notification: { title, body },
       data: stringData,
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "smart_safe_channel",
+          sound: "default",
+        },
+      },
     });
 
     console.log(
       `[FCM] Sent all: success=${result.successCount}, failed=${result.failureCount}`
     );
+
+    result.responses.forEach(async (resp, index) => {
+      const row = rows[index];
+
+      if (resp.success) {
+        console.log(
+          `[FCM] SENT OK user=${row.user_id} token=${row.device_token.substring(0, 30)}`
+        );
+      } else {
+        console.error(
+          `[FCM] SENT FAIL user=${row.user_id} token=${row.device_token.substring(0, 30)} error=${resp.error?.message}`
+        );
+
+        if (
+          resp.error?.code === "messaging/registration-token-not-registered" ||
+          resp.error?.code === "messaging/invalid-registration-token"
+        ) {
+          await db.query(
+            `UPDATE device_tokens SET status='inactive' WHERE id=?`,
+            [row.id]
+          );
+        }
+      }
+    });
 
     return result;
   } catch (err) {
