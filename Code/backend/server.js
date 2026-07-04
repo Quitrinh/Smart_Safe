@@ -2218,7 +2218,7 @@ async function sendPushToAllActiveDevices(title, body, data = {}) {
           : String(data[key]);
     }
 
-    const result = await admin.messaging().sendEachForMulticast({
+    const result = await firebaseAdmin.messaging().sendEachForMulticast({
       tokens,
       notification: { title, body },
       data: stringData,
