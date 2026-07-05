@@ -1823,28 +1823,29 @@ app.get("/api/notifications", authRequired, async (req, res) => {
 
     let sql = `
       SELECT 
-        n.id,
-        n.title,
-        n.body,
-        n.type,
-        n.ref_id,
-        n.is_read,
-        n.created_at,
-        e.gps_lat,
-        e.gps_lng
-      FROM notifications n
-      LEFT JOIN events e ON n.ref_id = e.id
-      WHERE n.user_id = ?
-      AND n.status = 'active'
+        notifications.id,
+        notifications.title,
+        notifications.body,
+        notifications.type,
+        notifications.ref_id,
+        notifications.is_read,
+        notifications.created_at,
+        events.gps_lat,
+        events.gps_lng
+      FROM notifications
+      LEFT JOIN events 
+        ON notifications.ref_id = events.id
+      WHERE notifications.user_id = ?
+      AND notifications.status = 'active'
     `;
 
     const params = [req.user.id];
 
     if (unread_only === "1") {
-      sql += " AND n.is_read = 0";
+      sql += " AND notifications.is_read = 0";
     }
 
-    sql += " ORDER BY n.id DESC LIMIT 100";
+    sql += " ORDER BY notifications.id DESC LIMIT 100";
 
     const [rows] = await db.query(sql, params);
 
