@@ -14,27 +14,6 @@ import 'firebase_options.dart'; // <-- file được sinh bởi FlutterFire CLI
 
 const String baseUrl = "https://smart-safe-api-etd9a7bsbhb6gyh8.southeastasia-01.azurewebsites.net";
 
-// void main() {
-//   runApp(const SmartSafeApp());
-// }
-
-// class SmartSafeApp extends StatelessWidget {
-//   const SmartSafeApp({super.key});
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return MaterialApp(
-//       title: "Smart Safe",
-//       debugShowCheckedModeBanner: false,
-//       theme: ThemeData(
-//         colorSchemeSeed: Colors.teal,
-//         useMaterial3: true,
-//         fontFamily: "Arial",
-//       ),
-//       home: const LoginPage(),
-//     );
-//   }
-// }
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(
@@ -96,7 +75,7 @@ class SmartSafeApp extends StatelessWidget {
 @override
 Widget build(BuildContext context) {
   return MaterialApp(
-    title: "SMART SAFE",
+    title: "Smart Safe",
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       colorSchemeSeed: const Color.fromARGB(255, 222, 238, 236),
@@ -104,34 +83,40 @@ Widget build(BuildContext context) {
       fontFamily: "Arial",
       textTheme: TextTheme(
         displayLarge: TextStyle(
-          fontSize: 32,
+          fontSize: 30,
           fontWeight: FontWeight.bold,
-          color: Colors.teal, // màu chủ đạo cho header
+          color: Colors.teal,
         ),
         displayMedium: TextStyle(
-          fontSize: 40,
+          fontSize: 28,
           fontWeight: FontWeight.bold,
           color: Colors.tealAccent,
         ),
         headlineSmall: TextStyle(
-          fontSize: 24,
+          fontSize: 22,
           fontWeight: FontWeight.w600,
           color: Colors.teal,
         ),
         titleLarge: TextStyle(
-          fontSize: 20,
+          fontSize: 18,
           fontWeight: FontWeight.w600,
           color: Colors.teal.shade700,
         ),
-        bodyMedium: TextStyle(
-          fontSize: 16,
+        bodyMedium: const TextStyle(
+          fontSize: 15,
           color: Colors.black87,
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+          padding: const EdgeInsets.symmetric(
+            vertical: 14,
+            horizontal: 20,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -491,109 +476,139 @@ class _LoginPageState extends State<LoginPage> {
 @override
 Widget build(BuildContext context) {
   return Scaffold(
-    backgroundColor: const Color.fromARGB(255, 26, 88, 134),
-    appBar: AppBar(
-      title: const Text("Đăng nhập"),
-      centerTitle: true,
-    ),
-    body: Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+    body: Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            "assets/svg/auth_background.png",
+            fit: BoxFit.cover,
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.lock_outline,
-                  size: 64,
-                  color: Color.fromARGB(255, 248, 252, 255),
+        ),
+
+        SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Card(
+                elevation: 10,
+                color: Colors.white.withOpacity(0.94),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
                 ),
-
-                const SizedBox(height: 16),
-
-                const Text(
-                  "SMART SAFE",
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                TextField(
-                  controller: loginController,
-                  decoration: const InputDecoration(
-                    labelText: "Số điện thoại / Username",
-                    prefixIcon: Icon(Icons.person),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                TextField(
-                  controller: passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: "Mật khẩu",
-                    prefixIcon: Icon(Icons.lock),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: loading ? null : login,
-                    child: loading
-                        ? const CircularProgressIndicator(
-                            color: Color.fromARGB(255, 1, 1, 0),
-                          )
-                        : const Text("Đăng nhập"),
-                  ),
-                ),
-
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ForgotPasswordPage(),
-                        ),
-                      );
-                    },
-                    child: const Text("Quên mật khẩu?"),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => RegisterPage(),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.lock_outline,
+                        size: 66,
+                        color: Color(0xFF0B4F6C),
                       ),
-                    );
-                  },
-                  child: const Text("Chưa có tài khoản? Đăng ký"),
+
+                      const SizedBox(height: 14),
+
+                      const Text(
+                        "SMART SAFE",
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 40,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                          color: Color(0xFF0B4F6C),
+                        ),
+                      ),
+
+                      const SizedBox(height: 28),
+
+                      TextField(
+                        controller: loginController,
+                        decoration: InputDecoration(
+                          labelText: "Số điện thoại / Username",
+                          prefixIcon: const Icon(Icons.person),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      TextField(
+                        controller: passwordController,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          labelText: "Mật khẩu",
+                          prefixIcon: const Icon(Icons.lock),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: loading ? null : login,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0B4F6C),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: loading
+                              ? const CircularProgressIndicator(
+                                  color: Colors.white,
+                                )
+                              : const Text("Đăng nhập"),
+                        ),
+                      ),
+
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ForgotPasswordPage(),
+                              ),
+                            );
+                          },
+                          child: const Text("Quên mật khẩu?"),
+                        ),
+                      ),
+
+                      const Divider(height: 28),
+
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => RegisterPage(),
+                            ),
+                          );
+                        },
+                        child: const Text("Chưa có tài khoản? Đăng ký"),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     ),
   );
 }
@@ -2436,60 +2451,64 @@ Widget build(BuildContext context) {
   return Scaffold(
     backgroundColor: const Color.fromARGB(255, 178, 218, 234),
 
-    appBar: AppBar(
-      backgroundColor: Colors.black87,
-      centerTitle: true,
-      toolbarHeight: 90,
-      elevation: 8,
-      title: Text(
-        "SMART SAFE",
-        style: TextStyle(
-          fontSize: 50,
-          fontWeight: FontWeight.bold,
-          foreground: Paint()
-            ..shader = LinearGradient(
-              colors: [
-                Colors.yellow.shade400,
-                Colors.orange.shade700,
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ).createShader(
-              const Rect.fromLTWH(0, 0, 300, 70),
-            ),
-          shadows: [
-            Shadow(
-              offset: const Offset(4, 4),
-              blurRadius: 6,
-              color: Colors.orange.shade900.withOpacity(0.6),
-            ),
-            Shadow(
-              offset: const Offset(-3, -3),
-              blurRadius: 3,
-              color: Colors.yellow.shade600.withOpacity(0.5),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        IconButton(
-          onPressed: refreshAll,
-          icon: const Icon(Icons.refresh),
-        ),
-        IconButton(
-          icon: const Icon(Icons.logout),
-          onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const LoginPage(),
+  appBar: AppBar(
+    backgroundColor: Colors.black87,
+    centerTitle: true,
+    toolbarHeight: 80,
+    elevation: 8,
+    title: LayoutBuilder(
+      builder: (context, constraints) {
+        return SizedBox(
+          width: constraints.maxWidth,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              "SMART SAFE",
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                fontSize: 42,
+                fontWeight: FontWeight.bold,
+                foreground: Paint()
+                  ..shader = LinearGradient(
+                    colors: [
+                      Colors.yellow.shade400,
+                      Colors.orange.shade700,
+                    ],
+                  ).createShader(
+                    const Rect.fromLTWH(0, 0, 260, 60),
+                  ),
+                shadows: [
+                  Shadow(
+                    offset: const Offset(3, 3),
+                    blurRadius: 5,
+                    color: Colors.orange.shade900.withOpacity(0.6),
+                  ),
+                ],
               ),
-            );
-          },
-        ),
-      ],
+            ),
+          ),
+        );
+      },
     ),
-
+    actions: [
+      IconButton(
+        onPressed: refreshAll,
+        icon: const Icon(Icons.refresh),
+      ),
+      IconButton(
+        icon: const Icon(Icons.logout),
+        onPressed: () {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const LoginPage(),
+            ),
+          );
+        },
+      ),
+    ],
+  ),
     body: pages[safeIndex],
 
     bottomNavigationBar: NavigationBar(
@@ -2628,7 +2647,7 @@ Widget dashboardView() {
             padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color.fromARGB(255, 176, 223, 218), Color(0xff4db6ac)],
+                colors: [Color.fromARGB(255, 63, 90, 87), Color(0xff4db6ac)],
               ),
               borderRadius: BorderRadius.circular(28),
             ),
