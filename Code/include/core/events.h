@@ -38,7 +38,8 @@ typedef enum
     // =====================================
     // FLAME
     // =====================================
-    EVENT_FLAME_DETECTED
+    EVENT_FLAME_DETECTED,
+    EVENT_SAFE_MOVED,
 
 } EventType;
 

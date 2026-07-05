@@ -1,6 +1,6 @@
 // =====================================================
 // task_gps.cpp
-// GPS chi doc vi tri, khong gui HTTP
+// GPS READ + SAFE MOVED DETECT
 // SMART SAFE
 // =====================================================
 
@@ -10,6 +10,7 @@
 
 #include "core/globals.h"
 #include "core/system_bits.h"
+#include "core/events.h"
 #include "config/pins.h"
 
 // =====================================================
@@ -25,13 +26,17 @@ extern double gpsLat;
 extern double gpsLng;
 extern bool gpsValid;
 
-// Config được cập nhật từ backend /api/esp32/config
+extern double homeLat;
+extern double homeLng;
+extern int gpsAllowedRadiusM;
 extern bool gpsAlertEnabled;
 
 // =====================================================
 // STATE
 // =====================================================
 bool gpsConnected = false;
+bool gpsMoveAlarmActive = false;
+
 unsigned long lastGPSFix = 0;
 
 // =====================================================
@@ -41,6 +46,81 @@ unsigned long lastGPSFix = 0;
 #define GPS_READ_TIMEOUT_MS 8000
 #define GPS_TRACKING_INTERVAL_MS 60000
 #define GPS_LOOP_DELAY_MS 1000
+
+// =====================================================
+// CHECK SAFE MOVED
+// =====================================================
+void checkSafeMoved()
+{
+    if (!gpsAlertEnabled)
+    {
+        return;
+    }
+
+    if (!gpsValid)
+    {
+        return;
+    }
+
+    if (homeLat == 0 || homeLng == 0)
+    {
+        Serial.println("[GPS] HOME LOCATION NOT SET");
+        return;
+    }
+
+    double distance =
+        TinyGPSPlus::distanceBetween(
+            gpsLat,
+            gpsLng,
+            homeLat,
+            homeLng
+        );
+
+    Serial.print("[GPS] DISTANCE FROM HOME = ");
+    Serial.print(distance);
+    Serial.println(" m");
+
+    if (
+        distance > gpsAllowedRadiusM &&
+        !gpsMoveAlarmActive
+    )
+    {
+        gpsMoveAlarmActive = true;
+
+        Serial.println("[GPS] SAFE MOVED ALERT");
+
+        xEventGroupSetBits(
+            systemEvents,
+            BIT_ALARM_ACTIVE |
+            BIT_NEED_SIM |
+            BIT_TRACKING_MODE
+        );
+
+        SystemEvent event;
+        event.type = EVENT_SAFE_MOVED;
+
+        strcpy(
+            event.message,
+            "SAFE_MOVED"
+        );
+
+        xQueueSend(
+            systemQueue,
+            &event,
+            0
+        );
+    }
+
+    if (
+        gpsMoveAlarmActive &&
+        distance <= gpsAllowedRadiusM
+    )
+    {
+        gpsMoveAlarmActive = false;
+
+        Serial.println("[GPS] SAFE BACK TO HOME AREA");
+    }
+}
 
 // =====================================================
 // READ GPS
@@ -73,6 +153,8 @@ bool readGPS(uint32_t timeoutMs)
             Serial.println(gpsLng, 6);
             Serial.println("====================");
 
+            checkSafeMoved();
+
             return true;
         }
 
@@ -99,7 +181,8 @@ void taskGPS(void *pv)
 
     while (1)
     {
-        EventBits_t bits = xEventGroupGetBits(systemEvents);
+        EventBits_t bits =
+            xEventGroupGetBits(systemEvents);
 
         bool needGPSByAlert =
             bits & BIT_NEED_GPS;
@@ -111,15 +194,16 @@ void taskGPS(void *pv)
         bool needGPS =
             needGPSByAlert || needGPSByTracking;
 
-        // =================================================
-        // GPS CONFIG DISABLED
-        // =================================================
         if (!gpsAlertEnabled)
         {
-            // Nếu có task khác yêu cầu GPS thì bỏ qua
+            gpsMoveAlarmActive = false;
+
             if (needGPS)
             {
-                xEventGroupClearBits(systemEvents, BIT_NEED_GPS);
+                xEventGroupClearBits(
+                    systemEvents,
+                    BIT_NEED_GPS
+                );
 
                 if (millis() - lastDisabledLog > 5000)
                 {
@@ -132,22 +216,22 @@ void taskGPS(void *pv)
             continue;
         }
 
-        // =================================================
-        // NO NEED GPS
-        // =================================================
         if (!needGPS)
         {
             vTaskDelay(pdMS_TO_TICKS(GPS_LOOP_DELAY_MS));
             continue;
         }
 
-        // Xoá yêu cầu GPS một lần
-        xEventGroupClearBits(systemEvents, BIT_NEED_GPS);
+        xEventGroupClearBits(
+            systemEvents,
+            BIT_NEED_GPS
+        );
 
         Serial.println();
         Serial.println("[GPS] GET LOCATION");
 
-        bool ok = readGPS(GPS_READ_TIMEOUT_MS);
+        bool ok =
+            readGPS(GPS_READ_TIMEOUT_MS);
 
         if (ok)
         {
@@ -158,8 +242,6 @@ void taskGPS(void *pv)
                 BIT_GPS_READY
             );
 
-            // Nếu GPS được yêu cầu do cảnh báo,
-            // sau khi có GPS thì cho phép SIM gửi cảnh báo
             if (needGPSByAlert)
             {
                 xEventGroupSetBits(
@@ -174,9 +256,6 @@ void taskGPS(void *pv)
         {
             Serial.println("[GPS] NO FIX");
 
-            // Nếu không lấy được GPS nhưng đây là cảnh báo,
-            // vẫn có thể cho SIM gửi cảnh báo không kèm vị trí.
-            // Nếu bạn không muốn gửi SMS khi không có GPS thì xoá đoạn này.
             if (needGPSByAlert)
             {
                 xEventGroupSetBits(

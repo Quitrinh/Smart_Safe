@@ -2615,7 +2615,6 @@ app.get("/api/esp32/config", esp32ConfigGuard, async (req, res) => {
       "wifi_ssid",
       "wifi_password",
       "keypad_password",
-
       "max_wrong_password",
       "alert_vibration_enabled",
       "alert_door_enabled",
@@ -2623,6 +2622,15 @@ app.get("/api/esp32/config", esp32ConfigGuard, async (req, res) => {
       "gps_alert_enabled",
       "gps_allowed_radius_m",
     ]);
+
+    const [locationRows] = await db.query(
+      `SELECT base_lat, base_lng, allowed_radius_m, enabled
+       FROM safe_location_config
+       WHERE id = 1
+       LIMIT 1`
+    );
+
+    const location = locationRows[0] || {};
 
     res.json({
       success: true,
@@ -2636,7 +2644,13 @@ app.get("/api/esp32/config", esp32ConfigGuard, async (req, res) => {
         alert_door_enabled: config.alert_door_enabled || "1",
         flame_alert_enabled: config.flame_alert_enabled || "1",
         gps_alert_enabled: config.gps_alert_enabled || "1",
-        gps_allowed_radius_m: config.gps_allowed_radius_m || "50",
+
+        gps_allowed_radius_m:
+          String(location.allowed_radius_m || config.gps_allowed_radius_m || "50"),
+
+        home_lat: String(location.base_lat || "0"),
+        home_lng: String(location.base_lng || "0"),
+        location_enabled: String(location.enabled ?? "0"),
       },
     });
   } catch (err) {

@@ -9,6 +9,8 @@
 #include "core/rfid_modes.h"
 #include "lcd_message.h"
 
+extern double homeLat;
+extern double homeLng;
 // ================= AUTH FLOW =================
 enum AuthStep {
   AUTH_STEP_IDLE,

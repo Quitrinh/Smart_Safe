@@ -28,7 +28,8 @@ extern unsigned long lcdMessageTime;
 
 extern String waitRFIDCardFromRC522(uint32_t timeoutMs);
 extern int enrollFingerprintFromAS608(uint32_t timeoutMs);
-
+extern double homeLat;
+extern double homeLng;
 extern double gpsLat;
 extern double gpsLng;
 extern bool gpsValid;
@@ -154,7 +155,8 @@ void fetchEsp32Config()
         String flameStr = String(data["flame_alert_enabled"] | "1");
         String gpsStr = String(data["gps_alert_enabled"] | "1");
         String gpsRadiusStr = String(data["gps_allowed_radius_m"] | "50");
-
+        String homeLatStr = String(data["home_lat"] | "0");
+        String homeLngStr = String(data["home_lng"] | "0");
         if (keypadPass.length() > 0)
         {
             correctPassword = keypadPass;
@@ -177,6 +179,8 @@ void fetchEsp32Config()
         if (newRadius > 0)
         {
             gpsAllowedRadiusM = newRadius;
+            homeLat = homeLatStr.toDouble();
+            homeLng = homeLngStr.toDouble();
         }
 
         Serial.println("[CONFIG] UPDATED");

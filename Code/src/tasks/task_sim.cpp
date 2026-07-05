@@ -642,7 +642,16 @@ void handleSIMEvent(SystemEvent event)
             appendGPS(msg);
             needSMS = true;
             break;
-
+        case EVENT_SAFE_MOVED:
+            eventName = "SAFE_MOVED";
+            msg =
+                "SMART SAFE ALERT\n"
+                "Su kien: Ket bi di chuyen\n"
+                "Muc do: NGUY HIEM\n"
+                "Trang thai: GPS ALERT";
+            appendGPS(msg);
+            needSMS = true;
+            break;
         default:
             return;
     }
