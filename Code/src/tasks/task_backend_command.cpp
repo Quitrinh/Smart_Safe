@@ -179,10 +179,9 @@ void fetchEsp32Config()
         if (newRadius > 0)
         {
             gpsAllowedRadiusM = newRadius;
-            homeLat = homeLatStr.toDouble();
-            homeLng = homeLngStr.toDouble();
         }
-
+        homeLat = homeLatStr.toDouble();
+        homeLng = homeLngStr.toDouble();
         Serial.println("[CONFIG] UPDATED");
 
         Serial.print("correctPassword = ");
@@ -190,6 +189,15 @@ void fetchEsp32Config()
 
         Serial.print("maxWrongPassword = ");
         Serial.println(maxWrongPassword);
+        Serial.print("gpsAllowedRadiusM = ");
+        
+        Serial.println(gpsAllowedRadiusM);
+
+        Serial.print("homeLat = ");
+        Serial.println(homeLat, 6);
+
+        Serial.print("homeLng = ");
+        Serial.println(homeLng, 6);
     }
     else
     {
@@ -252,61 +260,6 @@ void markCommandFailed(int commandId)
     markCommandStatus(commandId, "failed");
 }
 
-// =====================================================
-// CHECK AUTH FROM BACKEND
-// =====================================================
-// bool checkAuthFromBackend(String methodType, String methodValue)
-// {
-//     if (WiFi.status() != WL_CONNECTED)
-//     {
-//         Serial.println("[AUTH] WIFI NOT CONNECTED");
-//         return false;
-//     }
-
-//     HTTPClient http;
-
-//     String url =
-//         commandBackendUrl +
-//         "/api/auth-methods/check";
-
-//     http.begin(url);
-//     http.setTimeout(8000);
-//     http.setReuse(false);
-//     http.addHeader("Content-Type", "application/json");
-
-//     DynamicJsonDocument doc(512);
-
-//     doc["method_type"] = methodType;
-//     doc["method_value"] = methodValue;
-
-//     String body;
-//     serializeJson(doc, body);
-
-//     int code = http.POST(body);
-//     String response = http.getString();
-
-//     Serial.print("[AUTH] HTTP CODE = ");
-//     Serial.println(code);
-
-//     Serial.print("[AUTH] RESPONSE = ");
-//     Serial.println(response);
-
-//     http.end();
-
-//     if (code != 200) return false;
-
-//     DynamicJsonDocument resDoc(512);
-
-//     DeserializationError error =
-//         deserializeJson(resDoc, response);
-
-//     if (error) return false;
-
-//     bool valid =
-//         resDoc["valid"] | false;
-
-//     return valid;
-// }
 bool checkAuthFromBackend(String methodType, String methodValue)
 {
     if (WiFi.status() != WL_CONNECTED)
