@@ -3453,6 +3453,7 @@ app.patch("/api/admin/config/bulk", authRequired, adminRequired, async (req, res
     }
 
     const allowKeys = [
+      "keypad_password"
       "max_wrong_password",
       "gps_allowed_radius_m",
       "alert_vibration_enabled",

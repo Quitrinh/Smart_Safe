@@ -956,6 +956,9 @@ class _DashboardPageState extends State<DashboardPage> {
   final usernameController = TextEditingController();
   final TextEditingController otpController = TextEditingController();
   final TextEditingController newPasswordController = TextEditingController();
+  final TextEditingController baseLatController = TextEditingController();
+  final TextEditingController baseLngController = TextEditingController();
+  final TextEditingController radiusController = TextEditingController();
   List notifications = [];
   int unreadCount = 0;
   bool pushEnabled = true;
@@ -2165,10 +2168,8 @@ Future<void> setCurrentSafeLocation() async {
       body: jsonEncode({
         "base_lat": lat,
         "base_lng": lng,
-        "allowed_radius_m": int.tryParse(
-              configValue("gps_allowed_radius_m"),
-            ) ??
-            50,
+        "allowed_radius_m": int.tryParse(radiusController.text.trim()) ?? 50,
+        "enabled": true,
       }),
     );
 
@@ -2214,6 +2215,24 @@ Future<void> setCurrentSafeLocation() async {
     );
   }
 }
+Future<void> saveLocationConfig() async {
+  final res = await http.patch(
+    Uri.parse("$baseUrl/api/admin/location/config"),
+    headers: authHeaders,
+    body: jsonEncode({
+      "base_lat": double.parse(baseLatController.text.trim()),
+      "base_lng": double.parse(baseLngController.text.trim()),
+      "allowed_radius_m": int.parse(radiusController.text.trim()),
+      "enabled": true,
+    }),
+  );
+
+  print("SAVE LOCATION STATUS: ${res.statusCode}");
+  print("SAVE LOCATION BODY: ${res.body}");
+
+  await fetchLocationConfig();
+  await fetchConfig();
+}
 Future<void> fetchLocationConfig() async {
   if (!isAdmin) return;
 
@@ -2236,6 +2255,14 @@ Future<void> fetchLocationConfig() async {
       setState(() {
         locationConfig = data["data"];
       });
+      baseLatController.text =
+    locationConfig?["base_lat"]?.toString() ?? "";
+
+    baseLngController.text =
+        locationConfig?["base_lng"]?.toString() ?? "";
+
+    radiusController.text =
+        locationConfig?["allowed_radius_m"]?.toString() ?? "50";
     }
   } catch (e) {
     print("fetchLocationConfig error: $e");
