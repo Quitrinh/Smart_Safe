@@ -2045,6 +2045,16 @@ Future<void> enablePushNotifications() async {
     );
   }
 }
+Future<void> deleteNotification(int id) async {
+  final res = await http.delete(
+    Uri.parse("$baseUrl/api/notifications/$id"),
+    headers: authHeaders,
+  );
+
+  if (res.statusCode == 200) {
+    await fetchNotifications();
+  }
+}
 Future<void> togglePushNotification(bool value) async {
   if (pushLoading) return;
 
@@ -3812,6 +3822,12 @@ Widget notificationsView() {
                                   );
                                 },
                               ),
+                              IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () {
+                                deleteNotification(int.parse(n["id"].toString()));
+                              },
+                            ),
                           ],
                         ),
                       ),

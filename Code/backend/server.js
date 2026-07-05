@@ -1899,7 +1899,20 @@ app.patch("/api/notifications/read-all", authRequired, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+app.delete("/api/notifications/:id", authRequired, async (req, res) => {
+  try {
+    await db.query(
+      `UPDATE notifications
+       SET status = 'deleted'
+       WHERE id = ? AND user_id = ?`,
+      [req.params.id, req.user.id]
+    );
 
+    res.json({ success: true, message: "Notification deleted" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 // ===============================
 // ADMIN DASHBOARD
 // ===============================
