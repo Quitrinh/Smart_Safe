@@ -10,7 +10,9 @@
 
 #include "core/globals.h"
 #include "core/events.h"
+#include <Preferences.h>
 
+Preferences smsPrefs;
 // =====================================================
 // UART SIM
 // =====================================================
@@ -73,7 +75,43 @@ String normalizePhoneForSMS(String phone)
 
     return phone;
 }
+void saveSmsRecipientsLocal()
+{
+    smsPrefs.begin("sms_cfg", false);
 
+    smsPrefs.putInt("count", smsPhoneCount);
+
+    for (int i = 0; i < smsPhoneCount; i++)
+    {
+        smsPrefs.putString(("phone" + String(i)).c_str(), smsPhones[i]);
+    }
+
+    smsPrefs.end();
+
+    Serial.println("[SMS RECIPIENTS] SAVED LOCAL");
+}
+
+void loadSmsRecipientsLocal()
+{
+    smsPrefs.begin("sms_cfg", true);
+
+    smsPhoneCount = smsPrefs.getInt("count", 0);
+
+    if (smsPhoneCount > MAX_SMS_PHONES)
+    {
+        smsPhoneCount = MAX_SMS_PHONES;
+    }
+
+    for (int i = 0; i < smsPhoneCount; i++)
+    {
+        smsPhones[i] = smsPrefs.getString(("phone" + String(i)).c_str(), "");
+    }
+
+    smsPrefs.end();
+
+    Serial.print("[SMS RECIPIENTS] LOAD LOCAL COUNT = ");
+    Serial.println(smsPhoneCount);
+}
 // =====================================================
 // INIT SIM
 // =====================================================
@@ -275,7 +313,7 @@ bool fetchSmsRecipients()
 
     Serial.print("[SMS RECIPIENTS] COUNT = ");
     Serial.println(smsPhoneCount);
-
+    saveSmsRecipientsLocal();
     http.end();
     return true;
 }
@@ -697,7 +735,7 @@ void handleSIMEvent(SystemEvent event)
 void taskSIM(void *pv)
 {
     simInit();
-
+    loadSmsRecipientsLocal();
     simSerial.println("AT+CSQ");
     simWaitFor("OK", 3000);
 
@@ -709,10 +747,12 @@ void taskSIM(void *pv)
     );
 
     fetchSmsRecipients();
+    if (smsPhoneCount == 0)
+    {
+        loadSmsRecipientsLocal();
 
-    // sendSMSAll(
-    //     "SMART SAFE ONLINE"
-    // );
+        Serial.println("[SMS] USE LOCAL FALLBACK PHONES");
+    }
 
     SystemEvent event;
 

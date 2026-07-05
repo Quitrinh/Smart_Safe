@@ -191,9 +191,11 @@ void taskGPS(void *pv)
             (bits & BIT_TRACKING_MODE) &&
             (millis() - lastReadGPS > GPS_TRACKING_INTERVAL_MS);
 
-        bool needGPS =
-            needGPSByAlert || needGPSByTracking;
+        bool needGPSPeriodic =
+            millis() - lastReadGPS > GPS_TRACKING_INTERVAL_MS;
 
+        bool needGPS =
+            needGPSByAlert || needGPSByTracking || needGPSPeriodic;
         if (!gpsAlertEnabled)
         {
             gpsMoveAlarmActive = false;

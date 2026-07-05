@@ -12,7 +12,9 @@
 #include "core/globals.h"
 #include "core/events.h"
 #include "config/pins.h"
+#include <Preferences.h>
 
+Preferences gpsPrefs;
 // =====================================================
 // BACKEND URL
 // =====================================================
@@ -84,7 +86,34 @@ String getJsonValue(String json, String key)
 
     return doc[key].as<String>();
 }
+void loadGpsConfigLocal()
+{
+    gpsPrefs.begin("gps_cfg", true);
 
+    homeLat = gpsPrefs.getDouble("homeLat", 0);
+    homeLng = gpsPrefs.getDouble("homeLng", 0);
+    gpsAllowedRadiusM = gpsPrefs.getInt("radius", 50);
+
+    gpsPrefs.end();
+
+    Serial.println("[GPS CFG] LOAD LOCAL");
+    Serial.println(homeLat, 6);
+    Serial.println(homeLng, 6);
+    Serial.println(gpsAllowedRadiusM);
+}
+
+void saveGpsConfigLocal()
+{
+    gpsPrefs.begin("gps_cfg", false);
+
+    gpsPrefs.putDouble("homeLat", homeLat);
+    gpsPrefs.putDouble("homeLng", homeLng);
+    gpsPrefs.putInt("radius", gpsAllowedRadiusM);
+
+    gpsPrefs.end();
+
+    Serial.println("[GPS CFG] SAVED LOCAL");
+}
 // =====================================================
 // FETCH ESP32 CONFIG
 // =====================================================
@@ -182,6 +211,10 @@ void fetchEsp32Config()
         }
         homeLat = homeLatStr.toDouble();
         homeLng = homeLngStr.toDouble();
+        if (homeLat != 0 && homeLng != 0)
+        {
+            saveGpsConfigLocal();
+        }
         Serial.println("[CONFIG] UPDATED");
 
         Serial.print("correctPassword = ");
@@ -190,7 +223,7 @@ void fetchEsp32Config()
         Serial.print("maxWrongPassword = ");
         Serial.println(maxWrongPassword);
         Serial.print("gpsAllowedRadiusM = ");
-        
+
         Serial.println(gpsAllowedRadiusM);
 
         Serial.print("homeLat = ");
@@ -751,7 +784,7 @@ void taskBackendCommand(void *pv)
 
     unsigned long lastGpsPost = 0;
     unsigned long lastConfigFetch = 0;
-
+    loadGpsConfigLocal();
     while (1)
     {
         if (WiFi.status() == WL_CONNECTED)
