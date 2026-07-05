@@ -3135,11 +3135,9 @@ Widget eventsView() {
           : configValue("max_wrong_password"),
     );
 
-    final gpsRadiusController = TextEditingController(
-      text: configValue("gps_allowed_radius_m").isEmpty
-          ? "50"
-          : configValue("gps_allowed_radius_m"),
-    );
+  final gpsRadiusController = TextEditingController(
+    text: locationConfig?["allowed_radius_m"]?.toString() ?? "50",
+  );
 
     bool vibrationEnabled =
         configValue("alert_vibration_enabled") != "0";
@@ -3238,20 +3236,36 @@ Widget eventsView() {
                 ),
 
                 FilledButton(
-                  onPressed: () async {
-                    await updateAlertConfig({
-                      "max_wrong_password": maxWrongController.text.trim(),
-                      "gps_allowed_radius_m": gpsRadiusController.text.trim(),
-                      "alert_vibration_enabled": vibrationEnabled ? "1" : "0",
-                      "alert_door_enabled": doorEnabled ? "1" : "0",
-                      "flame_alert_enabled": flameEnabled ? "1" : "0",
-                      "gps_alert_enabled": gpsEnabled ? "1" : "0",
-                    });
+                onPressed: () async {
+                  await updateAlertConfig({
+                    "max_wrong_password": maxWrongController.text.trim(),
+                    "alert_vibration_enabled": vibrationEnabled ? "1" : "0",
+                    "alert_door_enabled": doorEnabled ? "1" : "0",
+                    "flame_alert_enabled": flameEnabled ? "1" : "0",
+                    "gps_alert_enabled": gpsEnabled ? "1" : "0",
+                  });
 
-                    if (!mounted) return;
+                  await http.patch(
+                    Uri.parse("$baseUrl/api/admin/location/config"),
+                    headers: {
+                      ...authHeaders,
+                      "Content-Type": "application/json",
+                    },
+                    body: jsonEncode({
+                      "base_lat": locationConfig?["base_lat"],
+                      "base_lng": locationConfig?["base_lng"],
+                      "allowed_radius_m":
+                          int.tryParse(gpsRadiusController.text.trim()) ?? 50,
+                      "enabled": true,
+                    }),
+                  );
 
-                    Navigator.pop(dialogContext);
-                  },
+                  await fetchConfig();
+                  await fetchLocationConfig();
+
+                  if (!mounted) return;
+                  Navigator.pop(dialogContext);
+                },
                   child: const Text("Lưu"),
                 ),
               ],
@@ -3457,7 +3471,7 @@ Widget settingsView() {
                   "Rung: ${configValue("alert_vibration_enabled") == "1" ? "Bật" : "Tắt"}\n"
                   "Cửa: ${configValue("alert_door_enabled") == "1" ? "Bật" : "Tắt"}\n"
                   "Lửa: ${configValue("flame_alert_enabled") == "1" ? "Bật" : "Tắt"}\n"
-                  "GPS radius: ${configValue("gps_allowed_radius_m")}m",
+                  "GPS radius: ${locationConfig?["allowed_radius_m"] ?? "50"}m",
                 ),
                 isThreeLine: true,
                 trailing: const Icon(Icons.chevron_right),
