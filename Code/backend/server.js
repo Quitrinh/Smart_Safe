@@ -609,7 +609,7 @@ app.delete("/api/sms-receivers/:id", async (req, res) => {
 app.get("/api/config", async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT * FROM safe_config ORDER BY id ASC"
+      "SELECT config_key, config_value, updated_at FROM system_config ORDER BY config_key ASC"
     );
 
     res.json({
@@ -636,12 +636,12 @@ app.post("/api/config", async (req, res) => {
     }
 
     await db.query(
-      `INSERT INTO safe_config(config_key, config_value)
+      `INSERT INTO system_config(config_key, config_value)
        VALUES (?, ?)
        ON DUPLICATE KEY UPDATE
-       config_value = VALUES(config_value),
-       updated_at = CURRENT_TIMESTAMP`,
-      [config_key, config_value]
+         config_value = VALUES(config_value),
+         updated_at = CURRENT_TIMESTAMP`,
+      [config_key, String(config_value)]
     );
 
     res.json({
@@ -3453,7 +3453,6 @@ app.patch("/api/admin/config/bulk", authRequired, adminRequired, async (req, res
     }
 
     const allowKeys = [
-      "keypad_password"
       "max_wrong_password",
       "gps_allowed_radius_m",
       "alert_vibration_enabled",
