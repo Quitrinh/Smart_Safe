@@ -3722,7 +3722,8 @@ Widget notificationsView() {
               ),
             ),
             TextButton.icon(
-              onPressed: notifications.isEmpty ? null : markAllNotificationsRead,
+              onPressed:
+                  notifications.isEmpty ? null : markAllNotificationsRead,
               icon: const Icon(Icons.done_all),
               label: const Text("Đọc tất cả"),
             ),
@@ -3740,7 +3741,10 @@ Widget notificationsView() {
                     Center(
                       child: Text(
                         "Chưa có thông báo",
-                        style: TextStyle(fontSize: 18, color: Colors.black54),
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.black54,
+                        ),
                       ),
                     ),
                   ],
@@ -3752,6 +3756,17 @@ Widget notificationsView() {
                     final n = notifications[index];
                     final isRead = n["is_read"] == 1;
 
+                    final lat = n["gps_lat"];
+                    final lng = n["gps_lng"];
+
+                    final hasGps =
+                        lat != null &&
+                        lng != null &&
+                        lat.toString() != "null" &&
+                        lng.toString() != "null" &&
+                        lat.toString().isNotEmpty &&
+                        lng.toString().isNotEmpty;
+
                     return Card(
                       color: isRead ? Colors.white : Colors.teal.shade50,
                       child: ListTile(
@@ -3762,24 +3777,43 @@ Widget notificationsView() {
                         title: Text(
                           n["title"]?.toString() ?? "",
                           style: TextStyle(
-                            fontWeight:
-                                isRead ? FontWeight.normal : FontWeight.bold,
+                            fontWeight: isRead
+                                ? FontWeight.normal
+                                : FontWeight.bold,
                           ),
                         ),
                         subtitle: Text(
-                          "${n["body"] ?? n["message"] ?? ""}\n${formatNotificationTime(n["created_at"])}"
+                          "${n["body"] ?? n["message"] ?? ""}\n${formatNotificationTime(n["created_at"])}",
                         ),
                         isThreeLine: true,
-                        trailing: isRead
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.done, color: Colors.green),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (hasGps)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.map,
+                                  color: Colors.teal,
+                                ),
+                                onPressed: () {
+                                  openMap(lat, lng);
+                                },
+                              ),
+
+                            if (!isRead)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.done,
+                                  color: Colors.green,
+                                ),
                                 onPressed: () {
                                   markNotificationRead(
                                     int.parse(n["id"].toString()),
                                   );
                                 },
                               ),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -3789,7 +3823,6 @@ Widget notificationsView() {
     ],
   );
 }
-
 IconData notificationIcon(String type) {
   if (type.contains("FIRE") || type.contains("SMOKE") || type.contains("GAS")) {
     return Icons.local_fire_department;

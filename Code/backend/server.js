@@ -1822,19 +1822,29 @@ app.get("/api/notifications", authRequired, async (req, res) => {
     const { unread_only } = req.query;
 
     let sql = `
-      SELECT id, title, body, type, ref_id, is_read, created_at
-      FROM notifications
-      WHERE user_id = ?
-      AND status = 'active'
+      SELECT 
+        n.id,
+        n.title,
+        n.body,
+        n.type,
+        n.ref_id,
+        n.is_read,
+        n.created_at,
+        e.gps_lat,
+        e.gps_lng
+      FROM notifications n
+      LEFT JOIN events e ON n.ref_id = e.id
+      WHERE n.user_id = ?
+      AND n.status = 'active'
     `;
 
     const params = [req.user.id];
 
     if (unread_only === "1") {
-      sql += " AND is_read = 0";
+      sql += " AND n.is_read = 0";
     }
 
-    sql += " ORDER BY id DESC LIMIT 100";
+    sql += " ORDER BY n.id DESC LIMIT 100";
 
     const [rows] = await db.query(sql, params);
 
